@@ -1,0 +1,7 @@
+{
+  "name": "IndicVoice Live - Speech-to-Speech Translator",
+  "description": "Real-time speech-to-speech translation between Hindi, Tamil, Malayalam, Kannada, Telugu, and English with dialect adaptation, offline voice synthesis, and language detection.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
