@@ -1,5 +1,8 @@
-import { LanguageCode, SystemVoiceStatus } from '../types';
+import { LanguageCode, SystemVoiceStatus, IndianVoicePersona } from '../types';
 import { SUPPORTED_LANGUAGES } from '../data/languages';
+
+const MALE_INDIAN_KEYWORDS = ['rishi', 'ravi', 'hemant', 'mohan', 'valluvar', 'gagan', 'midhun', 'prabhat', 'male'];
+const FEMALE_INDIAN_KEYWORDS = ['sangeeta', 'veena', 'lekha', 'kalyani', 'neerja', 'heera', 'kalpana', 'shruti', 'kani', 'sapna', 'sobhana', 'meera', 'tara', 'deepa', 'female'];
 
 class OfflineTTSService {
   private voices: SpeechSynthesisVoice[] = [];
@@ -52,31 +55,8 @@ class OfflineTTSService {
       'telugu',
       'kannada',
       'malayalam',
-      // Apple Indian voices
-      'rishi',
-      'sangeeta',
-      'veena',
-      'lekha',
-      'kalyani',
-      'neerja',
-      'prabhat',
-      'meera',
-      'tara',
-      'nivya',
-      'deepa',
-      // Microsoft Indian voices
-      'heera',
-      'ravi',
-      'kalpana',
-      'hemant',
-      'shruti',
-      'mohan',
-      'valluvar',
-      'kani',
-      'gagan',
-      'sapna',
-      'sobhana',
-      'midhun',
+      ...MALE_INDIAN_KEYWORDS,
+      ...FEMALE_INDIAN_KEYWORDS,
     ];
 
     return indianKeywords.some((kw) => name.includes(kw));
@@ -131,53 +111,94 @@ class OfflineTTSService {
   }
 
   /**
-   * Find the best matching browser voice for the given language, strictly prioritizing Indian voices
+   * Find the best matching browser voice for the given language and persona, strictly prioritizing Indian voices
    */
-  public findBestVoice(lang: LanguageCode): SpeechSynthesisVoice | null {
+  public findBestVoice(lang: LanguageCode, persona?: IndianVoicePersona): SpeechSynthesisVoice | null {
     if (this.voices.length === 0) {
       this.loadVoices();
     }
 
     const bcp47 = SUPPORTED_LANGUAGES[lang]?.bcp47.toLowerCase() || lang;
+    const isMalePref = persona === 'arjun';
+    const isFemalePref = persona === 'ananya' || persona === 'pooja';
 
-    // 1. Exact locale match (e.g. 'ta-in', 'hi-in', 'te-in', 'kn-in', 'ml-in', 'en-in')
-    let matched = this.voices.find((v) => v.lang.toLowerCase() === bcp47);
+    const matchesGender = (v: SpeechSynthesisVoice) => {
+      const n = v.name.toLowerCase();
+      if (isMalePref) return MALE_INDIAN_KEYWORDS.some((kw) => n.includes(kw));
+      if (isFemalePref) return FEMALE_INDIAN_KEYWORDS.some((kw) => n.includes(kw));
+      return true;
+    };
+
+    // 1. Exact locale match with preferred persona gender (e.g. 'hi-in' + female)
+    let matched = this.voices.find((v) => v.lang.toLowerCase() === bcp47 && matchesGender(v));
     if (matched) return matched;
 
-    // 2. Exact language match with Indian voice
+    // 2. Exact locale match (any gender)
+    matched = this.voices.find((v) => v.lang.toLowerCase() === bcp47);
+    if (matched) return matched;
+
+    // 3. Exact language match with Indian voice and preferred gender
+    matched = this.voices.find((v) => v.lang.toLowerCase().startsWith(lang) && this.isIndianVoice(v) && matchesGender(v));
+    if (matched) return matched;
+
+    // 4. Exact language match with Indian voice
     matched = this.voices.find((v) => v.lang.toLowerCase().startsWith(lang) && this.isIndianVoice(v));
     if (matched) return matched;
 
-    // 3. Name contains language name (e.g. "Google Tamil", "Hindi India")
+    // 5. Name contains language name (e.g. "Google Tamil", "Hindi India")
     const langName = SUPPORTED_LANGUAGES[lang]?.name.toLowerCase() || '';
+    matched = this.voices.find((v) => v.name.toLowerCase().includes(langName) && matchesGender(v));
+    if (matched) return matched;
+
     matched = this.voices.find((v) => v.name.toLowerCase().includes(langName));
     if (matched) return matched;
 
-    // 4. Any voice starting with that language
+    // 6. Any voice starting with that language
     matched = this.voices.find((v) => v.lang.toLowerCase().startsWith(lang));
     if (matched) return matched;
 
-    // 5. Strictly prioritize an Indian English voice over generic US/UK voices
-    matched = this.voices.find((v) => (v.lang.toLowerCase() === 'en-in' || v.lang.toLowerCase().startsWith('en-in')) || (v.lang.toLowerCase().startsWith('en') && this.isIndianVoice(v)));
+    // 7. Strictly prioritize an Indian English voice with gender matching
+    matched = this.voices.find(
+      (v) =>
+        ((v.lang.toLowerCase() === 'en-in' || v.lang.toLowerCase().startsWith('en-in')) ||
+          (v.lang.toLowerCase().startsWith('en') && this.isIndianVoice(v))) &&
+        matchesGender(v),
+    );
     if (matched) return matched;
 
-    // 6. Any Indian voice on the system (e.g. Hindi or Tamil device voice)
+    // 8. Any Indian English voice
+    matched = this.voices.find(
+      (v) =>
+        v.lang.toLowerCase() === 'en-in' ||
+        v.lang.toLowerCase().startsWith('en-in') ||
+        (v.lang.toLowerCase().startsWith('en') && this.isIndianVoice(v)),
+    );
+    if (matched) return matched;
+
+    // 9. Any Indian voice on the system
+    matched = this.voices.find((v) => this.isIndianVoice(v) && matchesGender(v));
+    if (matched) return matched;
+
     matched = this.voices.find((v) => this.isIndianVoice(v));
     if (matched) return matched;
 
-    // 7. Last resort: standard English voice
+    // 10. Fallback: general English voice
+    matched = this.voices.find((v) => v.lang.toLowerCase().startsWith('en') && matchesGender(v));
+    if (matched) return matched;
+
     matched = this.voices.find((v) => v.lang.toLowerCase().startsWith('en'));
     return matched || this.voices[0] || null;
   }
 
   /**
-   * Speak text offline using the browser's speech synthesis engine
+   * Speak text offline using the browser's speech synthesis engine with authentic Indian prosody
    */
   public speak(
     text: string,
     lang: LanguageCode,
     options: {
       transliteration?: string;
+      persona?: IndianVoicePersona;
       rate?: number;
       pitch?: number;
       volume?: number;
@@ -193,29 +214,52 @@ class OfflineTTSService {
 
     this.stop();
 
-    const voice = this.findBestVoice(lang);
-    const hasDirectLanguageVoice = voice && (voice.lang.toLowerCase().startsWith(lang) || voice.name.toLowerCase().includes(SUPPORTED_LANGUAGES[lang]?.name.toLowerCase()));
+    const voice = this.findBestVoice(lang, options.persona);
+    const hasDirectLanguageVoice =
+      voice &&
+      (voice.lang.toLowerCase().startsWith(lang) ||
+        voice.name.toLowerCase().includes(SUPPORTED_LANGUAGES[lang]?.name.toLowerCase()));
 
     // If native voice is not installed locally on this OS, but we have Romanized transliteration,
-    // read the transliteration with an Indian English voice so the listener still hears the pronunciation!
+    // read the transliteration with an authentic Indian English voice
     let textToSpeak = text;
     let voiceToUse = voice;
     let utteranceLang = SUPPORTED_LANGUAGES[lang]?.bcp47 || 'en-IN';
 
     if (!hasDirectLanguageVoice && options.transliteration && lang !== 'en') {
       textToSpeak = options.transliteration;
-      const enVoice = this.voices.find((v) => v.lang.toLowerCase().startsWith('en-in')) || this.voices.find((v) => v.lang.toLowerCase().startsWith('en'));
-      if (enVoice) {
-        voiceToUse = enVoice;
-        utteranceLang = enVoice.lang;
+      const indianEnVoice =
+        this.voices.find(
+          (v) =>
+            (v.lang.toLowerCase().startsWith('en-in') || this.isIndianVoice(v)) &&
+            (options.persona === 'arjun'
+              ? MALE_INDIAN_KEYWORDS.some((kw) => v.name.toLowerCase().includes(kw))
+              : FEMALE_INDIAN_KEYWORDS.some((kw) => v.name.toLowerCase().includes(kw))),
+        ) ||
+        this.voices.find((v) => v.lang.toLowerCase().startsWith('en-in') || this.isIndianVoice(v)) ||
+        this.voices.find((v) => v.lang.toLowerCase().startsWith('en'));
+
+      if (indianEnVoice) {
+        voiceToUse = indianEnVoice;
+        utteranceLang = indianEnVoice.lang;
       }
+    }
+
+    // Persona pitch adjustments for authentic natural tone
+    let defaultPitch = 1.0;
+    if (options.persona === 'arjun') {
+      defaultPitch = 0.90; // Natural Indian baritone
+    } else if (options.persona === 'ananya') {
+      defaultPitch = 1.04; // Expressive melodious Indian tone
+    } else if (options.persona === 'pooja') {
+      defaultPitch = 0.98; // Gentle clear tone
     }
 
     const utterance = new SpeechSynthesisUtterance(textToSpeak);
     if (voiceToUse) utterance.voice = voiceToUse;
     utterance.lang = utteranceLang;
-    utterance.rate = options.rate ?? 0.95; // Slightly slower for clear regional articulation
-    utterance.pitch = options.pitch ?? 1.0;
+    utterance.rate = options.rate ?? 0.92; // Natural, measured South Asian cadence
+    utterance.pitch = options.pitch ?? defaultPitch;
     utterance.volume = options.volume ?? 1.0;
 
     utterance.onstart = () => {

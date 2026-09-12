@@ -88,3 +88,101 @@ export interface IndianVoiceConfig {
   engine: 'neural' | 'device';
   speed: 'normal' | 'slow';
 }
+
+export type LatencyProfile = 'ultra-low' | 'balanced' | 'deep-context';
+
+export interface LatencyBreakdown {
+  asrMs: number;
+  translationMs: number;
+  ttsMs: number;
+  totalMs: number;
+}
+
+export interface ConferenceSpeechSegment {
+  id: string;
+  index: number;
+  speakerText: string;
+  speakerLang: LanguageCode;
+  speakerName?: string;
+  speakerRole?: string;
+  stageRole?: 'chair' | 'host' | 'keynote' | 'moderator' | 'panelist' | 'audience';
+  timestamp: number;
+  durationSec?: number;
+  latencyMs?: number;
+  latencyBreakdown?: LatencyBreakdown;
+  audioVolumeLevel?: number;
+  translations: Partial<
+    Record<
+      LanguageCode,
+      {
+        translatedText: string;
+        transliteration: string;
+        nuanceNotes?: string;
+        pronunciationGuide?: string;
+      }
+    >
+  >;
+  status: 'pending' | 'translating' | 'ready';
+}
+
+export interface ConferenceSpeaker {
+  id: string;
+  name: string;
+  role: string;
+  organization: string;
+  defaultLang: LanguageCode;
+  stageRole: 'chair' | 'host' | 'keynote' | 'moderator' | 'panelist' | 'audience';
+}
+
+export interface ConferenceSession {
+  id: string;
+  sessionNumber: number;
+  title: string;
+  sessionType: 'inauguration' | 'plenary' | 'panel' | 'qa_floor' | 'technical' | 'valedictory';
+  sessionTypeName: string;
+  track: string;
+  timeSlot: string;
+  description: string;
+  speakers: ConferenceSpeaker[];
+  segments: {
+    speakerName: string;
+    speakerRole: string;
+    stageRole: 'chair' | 'host' | 'keynote' | 'moderator' | 'panelist' | 'audience';
+    speakerLang: LanguageCode;
+    speakerText: string;
+    translations: Record<
+      LanguageCode,
+      {
+        translatedText: string;
+        transliteration: string;
+        nuanceNotes?: string;
+      }
+    >;
+  }[];
+}
+
+export interface ConferenceKeynotePreset {
+  id: string;
+  title: string;
+  category: string;
+  speakerName: string;
+  speakerRole: string;
+  speakerOrganization: string;
+  speakerLang: LanguageCode;
+  speakerDialect: string;
+  estimatedMinutes: number;
+  description: string;
+  segments: {
+    speakerText: string;
+    translations: Record<
+      LanguageCode,
+      {
+        translatedText: string;
+        transliteration: string;
+        nuanceNotes?: string;
+      }
+    >;
+  }[];
+}
+
+

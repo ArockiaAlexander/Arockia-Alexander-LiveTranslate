@@ -143,7 +143,7 @@ export async function translateAndSpeak(
 
     const data: TranslationResponse = await res.json();
     data.latencyMs = Date.now() - startTime;
-    data.engine = 'gemini';
+    data.engine = data.engine || 'gemini';
 
     translationCache.set(cacheKey, data);
 

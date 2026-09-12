@@ -10,12 +10,13 @@ import { offlineTTS } from './services/offlineTTS';
 import { Header } from './components/Header';
 import { LanguageSelector } from './components/LanguageSelector';
 import { SingleTranslatorView } from './components/SingleTranslatorView';
+import { ConferenceView } from './components/ConferenceView';
 import { DualSpeakerMode } from './components/DualSpeakerMode';
 import { DialectPlayground } from './components/DialectPlayground';
 import { OfflinePhrasebook } from './components/OfflinePhrasebook';
 
 export default function App() {
-  const [activeView, setActiveView] = useState<'single' | 'dual' | 'dialect' | 'offline'>('single');
+  const [activeView, setActiveView] = useState<'single' | 'conference' | 'dual' | 'dialect' | 'offline'>('conference');
   const [isOfflineMode, setIsOfflineMode] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(true);
 
@@ -154,6 +155,13 @@ export default function App() {
             onAddTurn={handleAddTurn}
             onClearConversation={handleClearConversation}
             detectedLang={detectedLang}
+          />
+        )}
+
+        {activeView === 'conference' && (
+          <ConferenceView
+            isOfflineMode={isOfflineMode}
+            autoSpeak={autoSpeak}
           />
         )}
 
