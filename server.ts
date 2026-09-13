@@ -64,10 +64,27 @@ const ttsCache = new Map<string, { audioBase64: string; mimeType: string }>();
 // Quota backoff tracker for gemini-3.1-flash-tts (free tier has strict 10 req/day limit)
 let ttsQuotaExhaustedUntil = 0;
 
+function getGeminiApiKey(): string | undefined {
+  if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY;
+  const keyName = Object.keys(process.env).find((k) => k.toLowerCase().includes('gemini'));
+  return keyName ? process.env[keyName] : undefined;
+}
+
+function getSarvamApiKey(): string | undefined {
+  if (process.env.SARVAM_API_KEY) return process.env.SARVAM_API_KEY;
+  if (process.env.SARVAM_KEY) return process.env.SARVAM_KEY;
+  if (process.env.SARVAM) return process.env.SARVAM;
+  if (process.env.SARVAM_TOKEN) return process.env.SARVAM_TOKEN;
+
+  // Case-insensitive process.env scan for any key containing 'sarvam'
+  const keyName = Object.keys(process.env).find((k) => k.toLowerCase().includes('sarvam'));
+  return keyName ? process.env[keyName] : undefined;
+}
+
 // Lazy GoogleGenAI initialization helper with resilient timeouts and retry options
 let genAIClient: GoogleGenAI | null = null;
 function getGenAIClient(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = getGeminiApiKey();
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY environment variable is missing.');
   }
@@ -89,10 +106,6 @@ function getGenAIClient(): GoogleGenAI {
     });
   }
   return genAIClient;
-}
-
-function getSarvamApiKey(): string | undefined {
-  return process.env.SARVAM_API_KEY || process.env.SARVAM_KEY || process.env.SARVAM || process.env.SARVAM_TOKEN;
 }
 
 function toSarvamLangCode(lang?: string): string {
@@ -189,10 +202,16 @@ async function synthesizeWithSarvam(text: string, lang: string, speaker = 'anany
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
+  const sarvamKey = getSarvamApiKey();
+  const geminiKey = getGeminiApiKey();
+
   res.json({
     status: 'ok',
-    hasApiKey: Boolean(process.env.GEMINI_API_KEY),
-    hasSarvamKey: Boolean(getSarvamApiKey()),
+    hasApiKey: Boolean(geminiKey),
+    hasSarvamKey: Boolean(sarvamKey),
+    detectedEnvKeys: Object.keys(process.env).filter(
+      (k) => k.toLowerCase().includes('sarvam') || k.toLowerCase().includes('gemini')
+    ),
     timestamp: Date.now(),
   });
 });
