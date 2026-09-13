@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import dotenv from 'dotenv';
 import { GoogleGenAI, Type, ThinkingLevel, Modality } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
@@ -650,19 +651,30 @@ Return JSON adhering to schema with:
   }
 });
 
+// Register static middleware for production build assets (dist)
+const distPath = path.join(process.cwd(), 'dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+}
+
+// Wildcard SPA route fallback: Return index.html for deep client links (/audience, /operator, etc.) on F5 refresh
+app.get('*', (req, res) => {
+  const distIndex = path.join(distPath, 'index.html');
+  const rootIndex = path.join(process.cwd(), 'index.html');
+  if (fs.existsSync(distIndex)) {
+    res.sendFile(distIndex);
+  } else {
+    res.sendFile(rootIndex);
+  }
+});
+
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
   }
 
   app.listen(PORT, '0.0.0.0', () => {
@@ -670,4 +682,8 @@ async function startServer() {
   });
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;
