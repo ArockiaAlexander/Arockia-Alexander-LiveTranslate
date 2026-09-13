@@ -470,8 +470,12 @@ app.post('/api/transcribe-audio', async (req, res) => {
     const parsed = JSON.parse(response.text?.trim() || '{}');
     res.json(parsed);
   } catch (error: any) {
-    console.error('Audio transcription error:', error);
-    res.status(500).json({ error: error.message || 'Failed to transcribe audio.' });
+    console.warn('[Audio Transcription] Gemini speech transcription unavailable (API key missing or limit reached):', error?.message || error);
+    res.json({
+      fallbackToDevice: true,
+      transcript: '',
+      error: 'Neural transcription unavailable. Using device browser speech recognition.',
+    });
   }
 });
 
