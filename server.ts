@@ -1,11 +1,14 @@
 import express from 'express';
+import { createServer } from 'http';
 import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
+import { randomUUID } from 'crypto';
+import { WebSocketServer, WebSocket } from 'ws';
 import { GoogleGenAI, Type, ThinkingLevel, Modality } from '@google/genai';
 import { translateOffline } from './src/services/offlineDictionary';
 import { createDemoWeather } from './src/services/demoWeather';
-import { LanguageCode } from './src/types';
+import { LanguageCode, ConferenceSpeechSegment, LiveAudiencePresence, LiveClientMessage, LivePresenceSnapshot } from './src/types';
 
 if (fs.existsSync('.env.local')) {
   dotenv.config({ path: '.env.local' });
@@ -14,6 +17,138 @@ dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
+const liveHttpServer = createServer(app);
+const liveSocketServer = new WebSocketServer({ noServer: true });
+const LIVE_SESSION_ID = process.env.LIVE_SESSION_ID || 'main';
+const LIVE_HEARTBEAT_TIMEOUT_MS = 30_000;
+
+interface LiveClient {
+  socket: WebSocket;
+  id: string;
+  role: 'operator' | 'audience';
+  sessionId: string;
+  language: LanguageCode;
+  audioReady: boolean;
+  joinedAt: number;
+  lastSeenAt: number;
+}
+
+const liveClients = new Map<string, LiveClient>();
+
+function sendLiveMessage(client: LiveClient, message: object): void {
+  if (client.socket.readyState === WebSocket.OPEN) client.socket.send(JSON.stringify(message));
+}
+
+function getPresenceSnapshot(): LivePresenceSnapshot {
+  const audience = [...liveClients.values()]
+    .filter((client) => client.role === 'audience')
+    .map<LiveAudiencePresence>((client) => ({
+      id: client.id,
+      language: client.language,
+      state: client.audioReady ? 'audio-ready' : 'connected',
+      joinedAt: client.joinedAt,
+      lastSeenAt: client.lastSeenAt,
+    }));
+  const byLanguage: Partial<Record<LanguageCode, number>> = {};
+  audience.forEach((client) => {
+    byLanguage[client.language] = (byLanguage[client.language] || 0) + 1;
+  });
+  return {
+    connected: audience.length,
+    audioReady: audience.filter((client) => client.state === 'audio-ready').length,
+    byLanguage,
+    audience,
+  };
+}
+
+function broadcastPresence(): void {
+  const message = { type: 'presence', snapshot: getPresenceSnapshot() };
+  liveClients.forEach((client) => sendLiveMessage(client, message));
+}
+
+function broadcastToAudience(message: object): void {
+  liveClients.forEach((client) => {
+    if (client.role === 'audience') sendLiveMessage(client, message);
+  });
+}
+
+function removeLiveClient(id: string): void {
+  if (liveClients.delete(id)) broadcastPresence();
+}
+
+liveHttpServer.on('upgrade', (request, socket, head) => {
+  if (request.url !== '/live') {
+    socket.destroy();
+    return;
+  }
+  liveSocketServer.handleUpgrade(request, socket, head, (websocket) => {
+    liveSocketServer.emit('connection', websocket, request);
+  });
+});
+
+liveSocketServer.on('connection', (socket) => {
+  let client: LiveClient | null = null;
+  const connectionId = randomUUID();
+  socket.on('message', (raw) => {
+    try {
+      const message = JSON.parse(raw.toString()) as LiveClientMessage;
+      if (message.type === 'join') {
+        if (message.sessionId !== LIVE_SESSION_ID) {
+          socket.send(JSON.stringify({ type: 'error', message: 'Unknown live conference session.' }));
+          socket.close(1008, 'Unknown session');
+          return;
+        }
+        if (message.role === 'operator' && [...liveClients.values()].some((item) => item.role === 'operator')) {
+          socket.send(JSON.stringify({ type: 'error', message: 'An operator is already connected.' }));
+          socket.close(1008, 'Operator already connected');
+          return;
+        }
+        const now = Date.now();
+        client = {
+          socket,
+          id: connectionId,
+          role: message.role,
+          sessionId: message.sessionId,
+          language: message.language || 'hi',
+          audioReady: false,
+          joinedAt: now,
+          lastSeenAt: now,
+        };
+        liveClients.set(connectionId, client);
+        sendLiveMessage(client, { type: 'joined', connectionId, sessionId: LIVE_SESSION_ID, role: message.role });
+        if (message.role === 'audience') broadcastPresence();
+        return;
+      }
+      if (!client) return;
+      client.lastSeenAt = Date.now();
+      if (message.type === 'heartbeat') {
+        if (message.language) client.language = message.language;
+        if (typeof message.audioReady === 'boolean') client.audioReady = message.audioReady;
+        if (client.role === 'audience') broadcastPresence();
+      } else if (message.type === 'segment' && client.role === 'operator') {
+        broadcastToAudience({ type: 'segment', segment: message.segment });
+      } else if (message.type === 'clear' && client.role === 'operator') {
+        broadcastToAudience({ type: 'clear' });
+      }
+    } catch {
+      if (client) sendLiveMessage(client, { type: 'error', message: 'Invalid live event.' });
+    }
+  });
+  socket.on('close', () => removeLiveClient(connectionId));
+  socket.on('error', () => removeLiveClient(connectionId));
+});
+
+setInterval(() => {
+  const cutoff = Date.now() - LIVE_HEARTBEAT_TIMEOUT_MS;
+  liveClients.forEach((client) => {
+    if (client.lastSeenAt < cutoff) {
+      client.socket.close(4000, 'Heartbeat timeout');
+      removeLiveClient(client.id);
+    } else if (client.socket.readyState === WebSocket.OPEN) {
+      client.socket.ping();
+    }
+  });
+}, LIVE_HEARTBEAT_TIMEOUT_MS / 2).unref();
 
 app.use(express.json({ limit: '25mb' }));
 
@@ -241,6 +376,10 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     hasApiKey: Boolean(geminiKey),
     hasSarvamKey: Boolean(sarvamKey),
+    liveTransport: 'websocket',
+    liveSessionId: LIVE_SESSION_ID,
+    audienceConnected: getPresenceSnapshot().connected,
+    audienceAudioReady: getPresenceSnapshot().audioReady,
     detectedEnvKeys: Object.keys(process.env).filter(
       (k) => k.toLowerCase().includes('sarvam') || k.toLowerCase().includes('gemini')
     ),
@@ -910,7 +1049,7 @@ async function startServer() {
     app.use(vite.middlewares);
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  liveHttpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`IndicVoice server running on http://localhost:${PORT}`);
     console.log('[local-logging] Request callbacks will print in this terminal.');
   });

@@ -39,6 +39,7 @@ import {
 } from '../services/conferenceSpeechManager';
 import { indicSpeech } from '../services/indicSpeechService';
 import { SSVPLogo } from './SSVPLogo';
+import { liveConferenceTransport } from '../services/liveConferenceTransport';
 
 interface AudienceViewProps {
   onSwitchToOperator?: () => void;
@@ -95,7 +96,8 @@ export function AudienceView({ onSwitchToOperator }: AudienceViewProps) {
   );
 
   // Audio & Display settings
-  const [isAudioTunedIn, setIsAudioTunedIn] = useState(true);
+  const [isAudioTunedIn, setIsAudioTunedIn] = useState(false);
+  const [liveConnectionStatus, setLiveConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
   const [volume, setVolume] = useState<number>(85);
   const [isMuted, setIsMuted] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState<'normal' | 'slow'>('normal');
@@ -108,6 +110,8 @@ export function AudienceView({ onSwitchToOperator }: AudienceViewProps) {
   // UX Enhancements: Font Zoom & Vocal Clarity EQ Booster
   const [fontSize, setFontSize] = useState<'base' | 'lg' | 'xl' | '2xl'>('xl');
   const [isClarityBoost, setIsClarityBoost] = useState(true);
+  const listeningLangRef = useRef(listeningLang);
+  const isAudioTunedInRef = useRef(false);
 
   // Sync with live manager and local storage events
   useEffect(() => {
@@ -138,6 +142,37 @@ export function AudienceView({ onSwitchToOperator }: AudienceViewProps) {
       unsubPlayback();
       window.removeEventListener('storage', handleStorageChange);
     };
+  }, []);
+
+  useEffect(() => {
+    listeningLangRef.current = listeningLang;
+    liveConferenceTransport.setLanguage(listeningLang);
+  }, [listeningLang]);
+
+  useEffect(() => {
+    liveConferenceTransport.connect('audience', listeningLang, {
+      onStatus: setLiveConnectionStatus,
+      onSegment: (segment) => {
+        setAllSegments((previous) => {
+          if (previous.some((item) => item.id === segment.id)) return previous;
+          return [...previous, segment];
+        });
+        setActiveSegmentIndex((previous) => previous + 1);
+        if (isAudioTunedInRef.current) {
+          const translation = segment.translations[listeningLangRef.current];
+          indicSpeech.speak(translation?.translatedText || segment.speakerText, listeningLangRef.current, {
+            transliteration: translation?.transliteration,
+            speed: playbackSpeed,
+          });
+        }
+      },
+      onClear: () => {
+        setAllSegments([]);
+        setActiveSegmentIndex(0);
+        indicSpeech.stop();
+      },
+    });
+    return () => liveConferenceTransport.disconnect();
   }, []);
 
   // Update listening language
@@ -195,13 +230,17 @@ export function AudienceView({ onSwitchToOperator }: AudienceViewProps) {
   };
 
   // Play a specific segment on demand
-  const handleReplaySegment = (seg: ConferenceSpeechSegment) => {
+  const handleReplaySegment = async (seg: ConferenceSpeechSegment) => {
     const trans = seg.translations[listeningLang];
     indicSpeech.setPersona(voicePersona);
-    indicSpeech.speak(trans?.translatedText || seg.speakerText, listeningLang, {
+    const started = await indicSpeech.speak(trans?.translatedText || seg.speakerText, listeningLang, {
       transliteration: trans?.transliteration,
       speed: playbackSpeed,
     });
+    if (started) {
+      setIsAudioTunedIn(true);
+      liveConferenceTransport.setAudioReady(true);
+    }
   };
 
   // Copy segment text
@@ -263,7 +302,7 @@ export function AudienceView({ onSwitchToOperator }: AudienceViewProps) {
                 </span>
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
                   <Radio className="w-3 h-3 text-emerald-500 animate-pulse" />
-                  <span>Live Stream Active</span>
+                  <span>{liveConnectionStatus === 'connected' ? 'Live Stream Connected' : 'Connecting to Live Stream'}</span>
                 </span>
               </div>
 
@@ -325,7 +364,7 @@ export function AudienceView({ onSwitchToOperator }: AudienceViewProps) {
           </div>
           <span className="hidden sm:inline-flex items-center gap-1 font-extrabold text-emerald-800 bg-emerald-100/80 px-2.5 py-0.5 rounded-md text-[11px] shrink-0 border border-emerald-200">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            Browser Stream
+            {isAudioTunedIn ? 'Audio Ready' : 'Tap to Start Audio'}
           </span>
         </div>
       </div>
@@ -388,11 +427,15 @@ export function AudienceView({ onSwitchToOperator }: AudienceViewProps) {
               onClick={() => {
                 const nextState = !isAudioTunedIn;
                 setIsAudioTunedIn(nextState);
+                isAudioTunedInRef.current = nextState;
                 if (!nextState) {
                   indicSpeech.stop();
+                  liveConferenceTransport.setAudioReady(false);
                 } else if (allSegments.length > 0) {
                   const lastSeg = allSegments[allSegments.length - 1];
                   handleReplaySegment(lastSeg);
+                } else {
+                  liveConferenceTransport.setAudioReady(true);
                 }
               }}
               className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-md active:scale-95 ${

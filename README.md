@@ -32,6 +32,7 @@ IndicVoice Live was specifically designed for national and regional Indian confe
 - **Auditorium Projector Display Mode**: Fullscreen high-contrast stage subtitle feed with bilingual display (original spoken text + translated subtitles), designed for large stage screens.
 - **Instant Audience QR Code**: Built-in crisp, scannable QR code with a one-click Projector Mode for projecting onto the stage before sessions begin, plus one-click PNG download for physical conference programs and badge printing.
 - **Official Proceedings Export**: Download timestamped, chronological transcripts in both formatted plaintext (`.txt`) and structured data (`.json`) for post-conference reporting.
+- **Railway Live Session**: The operator and audience pages communicate through a WebSocket session at `/live`; the operator page shows connected and audio-ready audience counts.
 
 ---
 
@@ -103,7 +104,21 @@ Attendees **do not** need to download an app from the App Store or Google Play. 
 3. Attendees open their smartphone camera, scan the code, and plug in earphones.
 4. Each attendee selects their preferred language listening channel from the top bar.
 
+The operator must run on the long-lived Railway Node service for live delivery. Audience browsers join the default `main` session, send heartbeats, and appear in the operator dashboard as either **connected** or **audio ready**. A connected browser is not counted as audio-ready until the attendee taps the audio control, because mobile browsers block autoplay until a user gesture.
+
 > **Important**: To activate the public link for outside attendees in Google AI Studio, click the **"Share"** button in the top-right toolbar of Google AI Studio once.
+
+### Railway live broadcast setup
+
+Set these Railway variables before deployment:
+
+```env
+LIVE_SESSION_ID=main
+GEMINI_API_KEY=your-gemini-key
+SARVAM_API_KEY=your-sarvam-key
+```
+
+Use the Railway domain shown in the QR modal. Do not use a Vercel serverless deployment for the live WebSocket session; Vercel can serve the API, but it does not keep the durable WebSocket process required for audience presence and broadcast delivery.
 
 ---
 

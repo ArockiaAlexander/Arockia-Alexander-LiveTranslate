@@ -40,6 +40,7 @@ import {
   IndianVoicePersona,
   LatencyProfile,
   LatencyBreakdown,
+  LivePresenceSnapshot,
 } from '../types';
 import { SUPPORTED_LANGUAGES, LANGUAGE_LIST } from '../data/languages';
 import {
@@ -55,6 +56,7 @@ import {
 import { indicSpeech } from '../services/indicSpeechService';
 import { VolumeLatencyConsole } from './VolumeLatencyConsole';
 import { AudienceShareModal } from './AudienceShareModal';
+import { liveConferenceTransport } from '../services/liveConferenceTransport';
 
 interface ConferenceViewProps {
   isOfflineMode?: boolean;
@@ -145,6 +147,13 @@ export function ConferenceView({
   const [isMicBroadcasting, setIsMicBroadcasting] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState('');
   const [audioLevel, setAudioLevel] = useState(0);
+  const [liveConnectionStatus, setLiveConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
+  const [audiencePresence, setAudiencePresence] = useState<LivePresenceSnapshot>({
+    connected: 0,
+    audioReady: 0,
+    byLanguage: {},
+    audience: [],
+  });
 
   // UI modes & controls
   const [isPresentationMode, setIsPresentationMode] = useState(false);
@@ -237,6 +246,18 @@ export function ConferenceView({
   useEffect(() => {
     updateManagerQueue(allSegments, listeningLang, false);
   }, [allSegments, listeningLang]);
+
+  useEffect(() => {
+    liveConferenceTransport.connect('operator', listeningLang, {
+      onPresence: setAudiencePresence,
+      onStatus: setLiveConnectionStatus,
+    });
+    return () => liveConferenceTransport.disconnect();
+  }, []);
+
+  useEffect(() => {
+    liveConferenceTransport.setLanguage(listeningLang);
+  }, [listeningLang]);
 
   // Auto-scroll teleprompter to active segment
   useEffect(() => {
@@ -471,6 +492,22 @@ export function ConferenceView({
           }),
         );
 
+        liveConferenceTransport.publishSegment({
+          ...newSegment,
+          status: 'ready',
+          latencyMs: totalMs,
+          latencyBreakdown: breakdown,
+          audioVolumeLevel: audioLevel > 0 ? audioLevel : 0.75,
+          translations: {
+            ...newSegment.translations,
+            [listeningLang]: {
+              translatedText: transData.translatedText,
+              transliteration: transData.transliteration,
+              nuanceNotes: transData.nuanceNotes,
+            },
+          },
+        });
+
         // Voiced in attendee's headset channel in real-time
         if (autoSpeak && !playbackState.isPlaying) {
           indicSpeech.speak(transData.translatedText, listeningLang, {
@@ -525,6 +562,7 @@ export function ConferenceView({
       conferenceSpeechManager.stopAudio();
       setAllSegments([]);
       setActiveSegmentIndex(0);
+      liveConferenceTransport.clearSession();
       try {
         localStorage.removeItem('indicvoice_live_proceedings');
       } catch (e) {}
@@ -786,6 +824,29 @@ export function ConferenceView({
                 <Trash2 className="w-4 h-4" />
               </button>
             )}
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2" aria-label="Audience connection status">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Live transport</div>
+            <div className={`mt-1 text-sm font-black ${liveConnectionStatus === 'connected' ? 'text-emerald-700' : 'text-amber-700'}`}>
+              {liveConnectionStatus === 'connected' ? 'Connected' : liveConnectionStatus}
+            </div>
+          </div>
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-700">Audience connected</div>
+            <div className="mt-1 text-xl font-black text-indigo-950">{audiencePresence.connected}</div>
+          </div>
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Audio ready</div>
+            <div className="mt-1 text-xl font-black text-emerald-950">{audiencePresence.audioReady}</div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Channels</div>
+            <div className="mt-1 text-xs font-bold text-slate-800">
+              {Object.entries(audiencePresence.byLanguage).filter(([, count]) => count).map(([language, count]) => `${language.toUpperCase()}: ${count}`).join(' • ') || 'No listeners yet'}
+            </div>
           </div>
         </div>
 

@@ -125,6 +125,36 @@ export interface ConferenceSpeechSegment {
   status: 'pending' | 'translating' | 'ready';
 }
 
+export type LiveAudienceState = 'connected' | 'audio-ready';
+
+export interface LiveAudiencePresence {
+  id: string;
+  language: LanguageCode;
+  state: LiveAudienceState;
+  joinedAt: number;
+  lastSeenAt: number;
+}
+
+export interface LivePresenceSnapshot {
+  connected: number;
+  audioReady: number;
+  byLanguage: Partial<Record<LanguageCode, number>>;
+  audience: LiveAudiencePresence[];
+}
+
+export type LiveClientMessage =
+  | { type: 'join'; role: 'operator' | 'audience'; sessionId: string; language?: LanguageCode }
+  | { type: 'heartbeat'; language?: LanguageCode; audioReady?: boolean }
+  | { type: 'segment'; segment: ConferenceSpeechSegment }
+  | { type: 'clear' };
+
+export type LiveServerMessage =
+  | { type: 'joined'; connectionId: string; sessionId: string; role: 'operator' | 'audience' }
+  | { type: 'presence'; snapshot: LivePresenceSnapshot }
+  | { type: 'segment'; segment: ConferenceSpeechSegment }
+  | { type: 'clear' }
+  | { type: 'error'; message: string };
+
 export interface ConferenceSpeaker {
   id: string;
   name: string;

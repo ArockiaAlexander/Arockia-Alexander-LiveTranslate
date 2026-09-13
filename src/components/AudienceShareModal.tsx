@@ -27,8 +27,8 @@ interface AudienceShareModalProps {
   conferenceVenue?: string;
 }
 
-const DEFAULT_SHARED_URL = 'https://ais-pre-fpravdw67cx6rugrayct4r-201467057452.asia-southeast1.run.app';
-const DEFAULT_DEV_URL = 'https://ais-dev-fpravdw67cx6rugrayct4r-201467057452.asia-southeast1.run.app';
+const DEFAULT_SHARED_URL = 'https://your-railway-domain.up.railway.app';
+const DEFAULT_DEV_URL = 'http://localhost:3000';
 
 export function AudienceShareModal({
   isOpen,
