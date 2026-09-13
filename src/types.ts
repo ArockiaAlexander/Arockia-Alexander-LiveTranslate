@@ -142,15 +142,35 @@ export interface LivePresenceSnapshot {
   audience: LiveAudiencePresence[];
 }
 
+export type LiveOperatorActivity =
+  | 'offline'
+  | 'standby'
+  | 'starting'
+  | 'listening'
+  | 'speaking'
+  | 'translating'
+  | 'live'
+  | 'error';
+
+export interface LiveOperatorStatus {
+  activity: LiveOperatorActivity;
+  updatedAt: number;
+  speakerName?: string;
+  speakerLanguage?: LanguageCode;
+  message?: string;
+}
+
 export type LiveClientMessage =
   | { type: 'join'; role: 'operator' | 'audience'; sessionId: string; language?: LanguageCode }
   | { type: 'heartbeat'; language?: LanguageCode; audioReady?: boolean }
+  | { type: 'operator-status'; status: LiveOperatorStatus }
   | { type: 'segment'; segment: ConferenceSpeechSegment }
   | { type: 'clear' };
 
 export type LiveServerMessage =
   | { type: 'joined'; connectionId: string; sessionId: string; role: 'operator' | 'audience' }
   | { type: 'presence'; snapshot: LivePresenceSnapshot }
+  | { type: 'operator-status'; status: LiveOperatorStatus }
   | { type: 'segment'; segment: ConferenceSpeechSegment }
   | { type: 'clear' }
   | { type: 'error'; message: string };

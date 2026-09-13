@@ -27,6 +27,8 @@ import {
   LanguageCode,
   ConferenceSpeechSegment,
   IndianVoicePersona,
+  LiveOperatorActivity,
+  LiveOperatorStatus,
 } from '../types';
 import { SUPPORTED_LANGUAGES, LANGUAGE_LIST } from '../data/languages';
 import {
@@ -98,6 +100,10 @@ export function AudienceView({ onSwitchToOperator }: AudienceViewProps) {
   // Audio & Display settings
   const [isAudioTunedIn, setIsAudioTunedIn] = useState(false);
   const [liveConnectionStatus, setLiveConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
+  const [operatorStatus, setOperatorStatus] = useState<LiveOperatorStatus>({
+    activity: 'offline',
+    updatedAt: Date.now(),
+  });
   const [volume, setVolume] = useState<number>(85);
   const [isMuted, setIsMuted] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState<'normal' | 'slow'>('normal');
@@ -152,6 +158,7 @@ export function AudienceView({ onSwitchToOperator }: AudienceViewProps) {
   useEffect(() => {
     liveConferenceTransport.connect('audience', listeningLang, {
       onStatus: setLiveConnectionStatus,
+      onOperatorStatus: setOperatorStatus,
       onSegment: (segment) => {
         setAllSegments((previous) => {
           if (previous.some((item) => item.id === segment.id)) return previous;
@@ -275,6 +282,28 @@ export function AudienceView({ onSwitchToOperator }: AudienceViewProps) {
   const latestSegment = allSegments[allSegments.length - 1];
   const currentTranslation = latestSegment?.translations[listeningLang];
 
+  const operatorActivityCopy: Record<LiveOperatorActivity, string> = {
+    offline: 'Operator is disconnected. Reconnecting...',
+    standby: 'Operator is connected. Waiting to begin.',
+    starting: 'Microphone is starting. Please keep this page open.',
+    listening: 'Listening for the speaker...',
+    speaking: 'Speaker is talking now.',
+    translating: 'Translating your selected language...',
+    live: `New translation ready. Audio will play in ${SUPPORTED_LANGUAGES[listeningLang]?.name}.`,
+    error: 'The live translation needs attention. Please wait for the next update.',
+  };
+
+  const operatorActivityTone: Record<LiveOperatorActivity, string> = {
+    offline: 'border-rose-200 bg-rose-50 text-rose-900',
+    standby: 'border-slate-200 bg-slate-50 text-slate-900',
+    starting: 'border-amber-200 bg-amber-50 text-amber-950',
+    listening: 'border-indigo-200 bg-indigo-50 text-indigo-950',
+    speaking: 'border-rose-200 bg-rose-50 text-rose-950',
+    translating: 'border-amber-200 bg-amber-50 text-amber-950',
+    live: 'border-emerald-200 bg-emerald-50 text-emerald-950',
+    error: 'border-rose-200 bg-rose-50 text-rose-900',
+  };
+
   // Text size classes mapping
   const subtitleSizeClass = {
     base: 'text-lg sm:text-xl',
@@ -366,6 +395,27 @@ export function AudienceView({ onSwitchToOperator }: AudienceViewProps) {
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
             {isAudioTunedIn ? 'Audio Ready' : 'Tap to Start Audio'}
           </span>
+        </div>
+      </div>
+
+      <div className={`border rounded-2xl px-4 py-3 ${operatorActivityTone[operatorStatus.activity]}`} aria-live="polite">
+        <div className="flex items-start gap-3">
+          <span className={`mt-1.5 h-2.5 w-2.5 rounded-full shrink-0 ${operatorStatus.activity === 'speaking' ? 'bg-rose-500 animate-pulse' : operatorStatus.activity === 'live' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+          <div className="min-w-0">
+            <div className="text-xs font-black uppercase tracking-wider">Operator activity</div>
+            <div className="mt-1 text-sm font-bold">{operatorActivityCopy[operatorStatus.activity]}</div>
+            {operatorStatus.speakerLanguage && (
+              <div className="mt-1 text-xs opacity-75">
+                Speaking in {SUPPORTED_LANGUAGES[operatorStatus.speakerLanguage]?.name || operatorStatus.speakerLanguage} • Your channel: {SUPPORTED_LANGUAGES[listeningLang]?.name}
+              </div>
+            )}
+            {operatorStatus.message && (
+              <div className="mt-1 text-xs opacity-75">{operatorStatus.message}</div>
+            )}
+            {!isAudioTunedIn && operatorStatus.activity !== 'offline' && (
+              <div className="mt-2 text-xs font-semibold">Tap Start Listening and keep your phone volume up.</div>
+            )}
+          </div>
         </div>
       </div>
 

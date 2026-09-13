@@ -41,6 +41,7 @@ import {
   LatencyProfile,
   LatencyBreakdown,
   LivePresenceSnapshot,
+  LiveOperatorActivity,
 } from '../types';
 import { SUPPORTED_LANGUAGES, LANGUAGE_LIST } from '../data/languages';
 import {
@@ -154,6 +155,16 @@ export function ConferenceView({
     byLanguage: {},
     audience: [],
   });
+
+  const publishOperatorActivity = (activity: LiveOperatorActivity, message?: string) => {
+    liveConferenceTransport.publishOperatorStatus({
+      activity,
+      updatedAt: Date.now(),
+      speakerName: speakerName || 'Stage Speaker',
+      speakerLanguage: speakerLang,
+      message,
+    });
+  };
 
   // UI modes & controls
   const [isPresentationMode, setIsPresentationMode] = useState(false);
@@ -364,6 +375,7 @@ export function ConferenceView({
   const handleToggleSpeakerMic = async () => {
     if (isMicBroadcasting) {
       conferenceSpeechManager.stopSpeakerMic();
+      publishOperatorActivity('standby');
       setIsMicBroadcasting(false);
       if (audioLevelIntervalRef.current) clearInterval(audioLevelIntervalRef.current);
       setAudioLevel(0);
@@ -371,13 +383,16 @@ export function ConferenceView({
     } else {
       // Pause playback so audio does not feedback into microphone
       conferenceSpeechManager.stopAudio();
+      publishOperatorActivity('starting');
 
       const started = await conferenceSpeechManager.startSpeakerMic(speakerLang, {
         onInterimText: (text) => {
           setInterimTranscript(text);
+          if (text.trim()) publishOperatorActivity('speaking');
         },
         onFinalSegment: async (text) => {
           setInterimTranscript('');
+          publishOperatorActivity('translating');
           await handleNewLiveSegment(
             text,
             speakerLang,
@@ -388,9 +403,11 @@ export function ConferenceView({
         },
         onError: (err) => {
           console.warn('Live conference mic error:', err);
+          publishOperatorActivity('error', 'Microphone or speech recognition needs attention.');
         },
         onStatusChange: (active) => {
           setIsMicBroadcasting(active);
+          publishOperatorActivity(active ? 'listening' : 'standby');
         },
       });
 
@@ -507,6 +524,7 @@ export function ConferenceView({
             },
           },
         });
+        publishOperatorActivity('live', 'New translation delivered to audience.');
 
         // Voiced in attendee's headset channel in real-time
         if (autoSpeak && !playbackState.isPlaying) {
@@ -518,6 +536,7 @@ export function ConferenceView({
       }
     } catch (e) {
       console.warn('Live conference translation error:', e);
+      publishOperatorActivity('error', 'Translation is temporarily unavailable.');
     }
   };
 
@@ -662,6 +681,7 @@ export function ConferenceView({
 
   const currentSegment = allSegments[activeSegmentIndex] || allSegments[0];
   const currentTranslation = currentSegment?.translations[listeningLang];
+  const displayedSegments = [...filteredSegments].reverse();
 
   return (
     <div className="space-y-6">
@@ -848,6 +868,45 @@ export function ConferenceView({
               {Object.entries(audiencePresence.byLanguage).filter(([, count]) => count).map(([language, count]) => `${language.toUpperCase()}: ${count}`).join(' • ') || 'No listeners yet'}
             </div>
           </div>
+        </div>
+
+        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3" aria-label="Audience availability details">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-indigo-600" />
+              <span className="text-xs font-black uppercase tracking-wider text-slate-700">Audience Presence</span>
+            </div>
+            <div className="flex items-center gap-3 text-[11px] font-bold">
+              <span className="text-emerald-700">{audiencePresence.audioReady} available for audio</span>
+              <span className="text-amber-700">{Math.max(0, audiencePresence.connected - audiencePresence.audioReady)} connected, audio not started</span>
+            </div>
+          </div>
+
+          {audiencePresence.audience.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {audiencePresence.audience.map((audience) => {
+                const isAudioReady = audience.state === 'audio-ready';
+                const lastSeenSeconds = Math.max(0, Math.round((Date.now() - audience.lastSeenAt) / 1000));
+                return (
+                  <div key={audience.id} className="flex items-center justify-between gap-2 rounded-lg border border-white bg-white px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-slate-800 truncate">Listener {audience.id.slice(0, 6)}</div>
+                      <div className="text-[11px] text-slate-500">{SUPPORTED_LANGUAGES[audience.language]?.name || audience.language.toUpperCase()} channel</div>
+                      <div className="text-[10px] text-slate-400">Last seen {lastSeenSeconds < 2 ? 'just now' : `${lastSeenSeconds}s ago`}</div>
+                    </div>
+                    <span className={`shrink-0 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-black ${isAudioReady ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${isAudioReady ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                      {isAudioReady ? 'Available' : 'Not ready'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-slate-300 bg-white px-3 py-3 text-xs text-slate-500">
+              No audience devices connected. Share the Audience QR link to begin.
+            </div>
+          )}
         </div>
 
         {/* Sessions Track Selector for Next Week's Program */}
@@ -1486,15 +1545,16 @@ export function ConferenceView({
             ref={segmentsContainerRef}
             className="mt-4 space-y-3 max-h-[550px] overflow-y-auto pr-1"
           >
-            {filteredSegments.map((seg, idx) => {
-              const isActive = activeSegmentIndex === idx;
+            {displayedSegments.map((seg, idx) => {
+              const originalIndex = allSegments.findIndex((item) => item.id === seg.id);
+              const isActive = activeSegmentIndex === originalIndex;
               const trans = seg.translations[listeningLang];
 
               return (
                 <div
                   key={seg.id}
-                  id={`conference-seg-${idx}`}
-                  onClick={() => handlePlaySpecificSegment(idx)}
+                  id={`conference-seg-${originalIndex}`}
+                  onClick={() => handlePlaySpecificSegment(originalIndex)}
                   className={`p-4 rounded-xl border transition-all cursor-pointer ${
                     isActive
                       ? 'bg-indigo-50/70 border-indigo-300 shadow-sm ring-2 ring-indigo-400/30'
@@ -1504,7 +1564,7 @@ export function ConferenceView({
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
                     <div className="flex items-center space-x-2">
                       <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-600 font-mono text-[11px] font-bold flex items-center justify-center">
-                        #{idx + 1}
+                        #{originalIndex + 1}
                       </span>
                       <strong className="text-xs text-slate-900 font-bold">
                         {seg.speakerName || 'Speaker'}

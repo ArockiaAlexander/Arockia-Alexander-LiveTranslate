@@ -8,7 +8,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { GoogleGenAI, Type, ThinkingLevel, Modality } from '@google/genai';
 import { translateOffline } from './src/services/offlineDictionary';
 import { createDemoWeather } from './src/services/demoWeather';
-import { LanguageCode, ConferenceSpeechSegment, LiveAudiencePresence, LiveClientMessage, LivePresenceSnapshot } from './src/types';
+import { LanguageCode, ConferenceSpeechSegment, LiveAudiencePresence, LiveClientMessage, LiveOperatorStatus, LivePresenceSnapshot } from './src/types';
 
 if (fs.existsSync('.env.local')) {
   dotenv.config({ path: '.env.local' });
@@ -34,6 +34,7 @@ interface LiveClient {
 }
 
 const liveClients = new Map<string, LiveClient>();
+let liveOperatorStatus: LiveOperatorStatus = { activity: 'offline', updatedAt: Date.now() };
 
 function sendLiveMessage(client: LiveClient, message: object): void {
   if (client.socket.readyState === WebSocket.OPEN) client.socket.send(JSON.stringify(message));
@@ -70,6 +71,11 @@ function broadcastToAudience(message: object): void {
   liveClients.forEach((client) => {
     if (client.role === 'audience') sendLiveMessage(client, message);
   });
+}
+
+function broadcastOperatorStatus(status: LiveOperatorStatus): void {
+  liveOperatorStatus = status;
+  broadcastToAudience({ type: 'operator-status', status });
 }
 
 function removeLiveClient(id: string): void {
@@ -116,7 +122,12 @@ liveSocketServer.on('connection', (socket) => {
         };
         liveClients.set(connectionId, client);
         sendLiveMessage(client, { type: 'joined', connectionId, sessionId: LIVE_SESSION_ID, role: message.role });
-        if (message.role === 'audience') broadcastPresence();
+        if (message.role === 'operator') {
+          broadcastOperatorStatus({ activity: 'standby', updatedAt: now });
+        } else {
+          broadcastPresence();
+          sendLiveMessage(client, { type: 'operator-status', status: liveOperatorStatus });
+        }
         return;
       }
       if (!client) return;
@@ -125,6 +136,8 @@ liveSocketServer.on('connection', (socket) => {
         if (message.language) client.language = message.language;
         if (typeof message.audioReady === 'boolean') client.audioReady = message.audioReady;
         if (client.role === 'audience') broadcastPresence();
+      } else if (message.type === 'operator-status' && client.role === 'operator') {
+        broadcastOperatorStatus(message.status);
       } else if (message.type === 'segment' && client.role === 'operator') {
         broadcastToAudience({ type: 'segment', segment: message.segment });
       } else if (message.type === 'clear' && client.role === 'operator') {
@@ -134,8 +147,14 @@ liveSocketServer.on('connection', (socket) => {
       if (client) sendLiveMessage(client, { type: 'error', message: 'Invalid live event.' });
     }
   });
-  socket.on('close', () => removeLiveClient(connectionId));
-  socket.on('error', () => removeLiveClient(connectionId));
+  socket.on('close', () => {
+    if (client?.role === 'operator') broadcastOperatorStatus({ activity: 'offline', updatedAt: Date.now() });
+    removeLiveClient(connectionId);
+  });
+  socket.on('error', () => {
+    if (client?.role === 'operator') broadcastOperatorStatus({ activity: 'offline', updatedAt: Date.now() });
+    removeLiveClient(connectionId);
+  });
 });
 
 setInterval(() => {

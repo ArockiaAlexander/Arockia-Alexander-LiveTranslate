@@ -2,6 +2,7 @@ import {
   LanguageCode,
   LiveClientMessage,
   LivePresenceSnapshot,
+  LiveOperatorStatus,
   LiveServerMessage,
   ConferenceSpeechSegment,
 } from '../types';
@@ -10,6 +11,7 @@ type LiveRole = 'operator' | 'audience';
 
 interface LiveTransportCallbacks {
   onPresence?: (snapshot: LivePresenceSnapshot) => void;
+  onOperatorStatus?: (status: LiveOperatorStatus) => void;
   onSegment?: (segment: ConferenceSpeechSegment) => void;
   onClear?: () => void;
   onStatus?: (status: 'connecting' | 'connected' | 'disconnected' | 'error') => void;
@@ -52,6 +54,7 @@ class LiveConferenceTransport {
       try {
         const message = JSON.parse(event.data) as LiveServerMessage;
         if (message.type === 'presence') this.callbacks.onPresence?.(message.snapshot);
+        if (message.type === 'operator-status') this.callbacks.onOperatorStatus?.(message.status);
         if (message.type === 'segment') this.callbacks.onSegment?.(message.segment);
         if (message.type === 'clear') this.callbacks.onClear?.();
         if (message.type === 'error') this.callbacks.onStatus?.('error');
@@ -79,6 +82,10 @@ class LiveConferenceTransport {
 
   public clearSession(): void {
     if (this.role === 'operator') this.send({ type: 'clear' });
+  }
+
+  public publishOperatorStatus(status: LiveOperatorStatus): void {
+    if (this.role === 'operator') this.send({ type: 'operator-status', status });
   }
 
   public setLanguage(language: LanguageCode): void {
