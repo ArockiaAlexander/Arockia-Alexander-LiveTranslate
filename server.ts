@@ -6,6 +6,9 @@ import { GoogleGenAI, Type, ThinkingLevel, Modality } from '@google/genai';
 import { translateOffline } from './src/services/offlineDictionary';
 import { LanguageCode } from './src/types';
 
+if (fs.existsSync('.env.local')) {
+  dotenv.config({ path: '.env.local' });
+}
 dotenv.config();
 
 const app = express();
