@@ -3,7 +3,6 @@ import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
 import { GoogleGenAI, Type, ThinkingLevel, Modality } from '@google/genai';
-import { createServer as createViteServer } from 'vite';
 import { translateOffline } from './src/services/offlineDictionary';
 import { LanguageCode } from './src/types';
 
@@ -670,6 +669,7 @@ app.get('*', (req, res) => {
 
 async function startServer() {
   if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
