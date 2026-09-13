@@ -10,6 +10,27 @@ const app = express();
 
 app.use(express.json({ limit: '25mb' }));
 
+app.use((req, res, next) => {
+  const requestId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const startedAt = Date.now();
+  res.setHeader('X-Request-ID', requestId);
+  res.on('finish', () => {
+    console.log('[api-request]', {
+      requestId,
+      method: req.method,
+      route: req.path,
+      statusCode: res.statusCode,
+      durationMs: Date.now() - startedAt,
+    });
+  });
+  next();
+});
+
+function logApiError(scope: string, error: unknown, requestId?: string): void {
+  const details = error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : { error };
+  console.error(`[${scope}]`, { requestId, ...details });
+}
+
 // Serverless CORS & Security Headers Middleware
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -220,7 +241,9 @@ app.post(['/api/synthesize-speech', '/synthesize-speech'], async (req, res) => {
           engine: 'sarvam-bulbul-v1',
         });
       }
-    } catch {}
+    } catch (error) {
+      logApiError('sarvam-tts', error);
+    }
   }
 
   if (Date.now() < ttsQuotaExhaustedUntil) {
@@ -264,6 +287,7 @@ app.post(['/api/synthesize-speech', '/synthesize-speech'], async (req, res) => {
       fallbackToDevice: false,
     });
   } catch (error: any) {
+    logApiError('gemini-tts', error);
     res.json({
       fallbackToDevice: true,
       error: 'Neural voice busy. Switched to authentic device Indian voice.',
@@ -302,7 +326,9 @@ app.post(['/api/translate', '/translate'], async (req, res) => {
           engine: 'sarvam-mayura-v1',
         });
       }
-    } catch {}
+    } catch (error) {
+      logApiError('sarvam-translate', error);
+    }
   }
 
   const effectiveSrcLang: LanguageCode = (sourceLang && sourceLang !== 'auto' ? sourceLang : 'en') as LanguageCode;
