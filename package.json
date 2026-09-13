@@ -24,6 +24,7 @@
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "react-router-dom": "^7.18.3",
+    "sarvamai": "^1.1.8-alpha.5",
     "vite": "^6.2.3"
   },
   "devDependencies": {
