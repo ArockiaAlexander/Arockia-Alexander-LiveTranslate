@@ -666,22 +666,25 @@ Return JSON adhering to schema with:
   }
 });
 
-// Register static middleware for production build assets (dist)
-const distPath = path.join(process.cwd(), 'dist');
-if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
-}
-
-// Wildcard SPA route fallback: Return index.html for deep client links (/audience, /operator, etc.) on F5 refresh
-app.get('*', (req, res) => {
-  const distIndex = path.join(distPath, 'index.html');
-  const rootIndex = path.join(process.cwd(), 'index.html');
-  if (fs.existsSync(distIndex)) {
-    res.sendFile(distIndex);
-  } else {
-    res.sendFile(rootIndex);
+// In local Node / Docker environment, serve built static assets & SPA fallback
+if (!process.env.VERCEL) {
+  const distPath = path.join(process.cwd(), 'dist');
+  if (fs.existsSync(distPath)) {
+    app.use(express.static(distPath));
   }
-});
+
+  app.get('*', (req, res) => {
+    const distIndex = path.join(distPath, 'index.html');
+    const rootIndex = path.join(process.cwd(), 'index.html');
+    if (fs.existsSync(distIndex)) {
+      res.sendFile(distIndex);
+    } else if (fs.existsSync(rootIndex)) {
+      res.sendFile(rootIndex);
+    } else {
+      res.status(200).send('<!DOCTYPE html><html><head><title>IndicVoice</title></head><body><div id="root"></div></body></html>');
+    }
+  });
+}
 
 async function startServer() {
   if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
