@@ -12,9 +12,25 @@ if (fs.existsSync('.env.local')) {
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
 
 app.use(express.json({ limit: '25mb' }));
+
+app.use((req, res, next) => {
+  const requestId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const startedAt = Date.now();
+  res.setHeader('X-Request-ID', requestId);
+  res.on('finish', () => {
+    console.log('[local-request]', {
+      requestId,
+      method: req.method,
+      route: req.path,
+      statusCode: res.statusCode,
+      durationMs: Date.now() - startedAt,
+    });
+  });
+  next();
+});
 
 // Serverless CORS & Security Headers Middleware
 app.use((req, res, next) => {
@@ -880,6 +896,7 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`IndicVoice server running on http://localhost:${PORT}`);
+    console.log('[local-logging] Request callbacks will print in this terminal.');
   });
 }
 
