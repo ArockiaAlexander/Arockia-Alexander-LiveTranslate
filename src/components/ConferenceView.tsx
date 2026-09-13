@@ -59,9 +59,14 @@ import { AudienceShareModal } from './AudienceShareModal';
 interface ConferenceViewProps {
   isOfflineMode?: boolean;
   autoSpeak?: boolean;
+  onSwitchToAudienceView?: () => void;
 }
 
-export function ConferenceView({ isOfflineMode = false, autoSpeak = true }: ConferenceViewProps) {
+export function ConferenceView({
+  isOfflineMode = false,
+  autoSpeak = true,
+  onSwitchToAudienceView,
+}: ConferenceViewProps) {
   // Conference configuration (persisted in localStorage for upcoming conference)
   const [conferenceInfo, setConferenceInfo] = useState<ConferenceMetadata>(() => {
     try {
@@ -754,6 +759,18 @@ export function ConferenceView({ isOfflineMode = false, autoSpeak = true }: Conf
               <QrCode className="w-4 h-4" />
               <span>Audience QR</span>
             </button>
+
+            {/* Switch to Audience Web View */}
+            {onSwitchToAudienceView && (
+              <button
+                onClick={onSwitchToAudienceView}
+                className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs"
+                title="Open Audience Web View (Attendee Earphone & Subtitle Mode)"
+              >
+                <Headphones className="w-4 h-4 text-indigo-600" />
+                <span>Audience Web View</span>
+              </button>
+            )}
 
             {allSegments.length > 0 && (
               <button
