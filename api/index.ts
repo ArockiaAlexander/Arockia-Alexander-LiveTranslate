@@ -2,6 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import { GoogleGenAI, Type, ThinkingLevel, Modality } from '@google/genai';
 import { translateOffline } from '../src/services/offlineDictionary';
+import { createDemoWeather } from '../src/services/demoWeather';
 import { LanguageCode } from '../src/types';
 
 dotenv.config();
@@ -30,6 +31,21 @@ function logApiError(scope: string, error: unknown, requestId?: string): void {
   const details = error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : { error };
   console.error(`[${scope}]`, { requestId, ...details });
 }
+
+app.get('/api/weather', (req, res) => {
+  const city = typeof req.query.city === 'string' && req.query.city.trim() ? req.query.city.trim() : 'Chennai';
+  const requestedDays = Number(req.query.days || 5);
+
+  if (!Number.isInteger(requestedDays) || requestedDays < 1 || requestedDays > 7) {
+    return res.status(400).json({ error: 'days must be an integer between 1 and 7.' });
+  }
+
+  return res.json({
+    city,
+    generatedAt: new Date().toISOString(),
+    forecasts: createDemoWeather(city, requestedDays),
+  });
+});
 
 // Serverless CORS & Security Headers Middleware
 app.use((req, res, next) => {
