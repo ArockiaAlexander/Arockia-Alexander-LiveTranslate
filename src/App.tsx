@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { LanguageCode, ConversationTurn, SystemVoiceStatus } from './types';
 import { SUPPORTED_LANGUAGES } from './data/languages';
 import { offlineTTS } from './services/offlineTTS';
@@ -14,9 +15,12 @@ import { ConferenceView } from './components/ConferenceView';
 import { DualSpeakerMode } from './components/DualSpeakerMode';
 import { DialectPlayground } from './components/DialectPlayground';
 import { OfflinePhrasebook } from './components/OfflinePhrasebook';
+import { AudienceView } from './components/AudienceView';
 
 export default function App() {
-  const [activeView, setActiveView] = useState<'single' | 'conference' | 'dual' | 'dialect' | 'offline'>('conference');
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const [isOfflineMode, setIsOfflineMode] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(true);
 
@@ -64,6 +68,29 @@ export default function App() {
     }
   }, []);
 
+  const getActiveViewFromPath = (pathname: string): 'single' | 'conference' | 'dual' | 'dialect' | 'offline' | 'audience' => {
+    if (pathname.startsWith('/audience')) return 'audience';
+    if (pathname.startsWith('/studio') || pathname.startsWith('/single')) return 'single';
+    if (pathname.startsWith('/dual')) return 'dual';
+    if (pathname.startsWith('/dialect')) return 'dialect';
+    if (pathname.startsWith('/offline')) return 'offline';
+    return 'conference';
+  };
+
+  const activeView = getActiveViewFromPath(location.pathname);
+
+  const handleNavigateView = (view: 'single' | 'conference' | 'dual' | 'dialect' | 'offline' | 'audience') => {
+    const routeMap = {
+      conference: '/operator',
+      audience: '/audience',
+      single: '/studio',
+      dual: '/dual',
+      dialect: '/dialect',
+      offline: '/offline',
+    };
+    navigate(routeMap[view]);
+  };
+
   const handleSwapLanguages = () => {
     if (sourceLang === 'auto') {
       const nextTarget = detectedLang || 'en';
@@ -108,25 +135,27 @@ export default function App() {
   const handleSelectPhraseForStudio = (phrase: string, src: LanguageCode, tgt: LanguageCode) => {
     setSourceLang(src);
     setTargetLang(tgt);
-    setActiveView('single');
+    navigate('/studio');
   };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-orange-500 selection:text-white">
-      {/* Header */}
-      <Header
-        isOfflineMode={isOfflineMode}
-        onToggleOfflineMode={() => setIsOfflineMode((prev) => !prev)}
-        autoSpeak={autoSpeak}
-        onToggleAutoSpeak={() => setAutoSpeak((prev) => !prev)}
-        voiceStatus={voiceStatus}
-        activeView={activeView}
-        onChangeView={setActiveView}
-      />
+      {/* Header (Shown on Operator routes; hidden on Audience route) */}
+      {activeView !== 'audience' && (
+        <Header
+          isOfflineMode={isOfflineMode}
+          onToggleOfflineMode={() => setIsOfflineMode((prev) => !prev)}
+          autoSpeak={autoSpeak}
+          onToggleAutoSpeak={() => setAutoSpeak((prev) => !prev)}
+          voiceStatus={voiceStatus}
+          activeView={activeView}
+          onChangeView={handleNavigateView}
+        />
+      )}
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* Language Selector Bar (Shown in Single Mode) */}
+        {/* Language Selector Bar (Shown in Studio Mode) */}
         {activeView === 'single' && (
           <LanguageSelector
             sourceLang={sourceLang}
@@ -142,71 +171,99 @@ export default function App() {
           />
         )}
 
-        {/* View Routing */}
-        {activeView === 'single' && (
-          <SingleTranslatorView
-            sourceLang={sourceLang}
-            targetLang={targetLang}
-            sourceDialect={sourceDialect}
-            targetDialect={targetDialect}
-            isOfflineMode={isOfflineMode}
-            autoSpeak={autoSpeak}
-            conversation={conversation}
-            onAddTurn={handleAddTurn}
-            onClearConversation={handleClearConversation}
-            detectedLang={detectedLang}
+        {/* Declarative URL Router */}
+        <Routes>
+          <Route path="/" element={<Navigate to="/operator" replace />} />
+          <Route
+            path="/operator"
+            element={
+              <ConferenceView
+                isOfflineMode={isOfflineMode}
+                autoSpeak={autoSpeak}
+                onSwitchToAudienceView={() => navigate('/audience')}
+              />
+            }
           />
-        )}
-
-        {activeView === 'conference' && (
-          <ConferenceView
-            isOfflineMode={isOfflineMode}
-            autoSpeak={autoSpeak}
+          <Route path="/conference" element={<Navigate to="/operator" replace />} />
+          <Route
+            path="/audience"
+            element={
+              <AudienceView
+                onSwitchToOperator={() => navigate('/operator')}
+              />
+            }
           />
-        )}
-
-        {activeView === 'dual' && (
-          <DualSpeakerMode
-            langA={dualLangA}
-            langB={dualLangB}
-            dialectA={dualDialectA}
-            dialectB={dualDialectB}
-            isOfflineMode={isOfflineMode}
-            autoSpeak={autoSpeak}
-            conversation={conversation}
-            onAddTurn={handleAddTurn}
-            onClearConversation={handleClearConversation}
+          <Route
+            path="/studio"
+            element={
+              <SingleTranslatorView
+                sourceLang={sourceLang}
+                targetLang={targetLang}
+                sourceDialect={sourceDialect}
+                targetDialect={targetDialect}
+                isOfflineMode={isOfflineMode}
+                autoSpeak={autoSpeak}
+                conversation={conversation}
+                onAddTurn={handleAddTurn}
+                onClearConversation={handleClearConversation}
+                detectedLang={detectedLang}
+              />
+            }
           />
-        )}
-
-        {activeView === 'dialect' && (
-          <DialectPlayground
-            isOfflineMode={isOfflineMode}
-            onSelectForTranslation={handleSelectPhraseForStudio}
+          <Route path="/single" element={<Navigate to="/studio" replace />} />
+          <Route
+            path="/dual"
+            element={
+              <DualSpeakerMode
+                langA={dualLangA}
+                langB={dualLangB}
+                dialectA={dualDialectA}
+                dialectB={dualDialectB}
+                isOfflineMode={isOfflineMode}
+                autoSpeak={autoSpeak}
+                conversation={conversation}
+                onAddTurn={handleAddTurn}
+                onClearConversation={handleClearConversation}
+              />
+            }
           />
-        )}
-
-        {activeView === 'offline' && (
-          <OfflinePhrasebook onSelectPhrase={handleSelectPhraseForStudio} />
-        )}
+          <Route
+            path="/dialect"
+            element={
+              <DialectPlayground
+                isOfflineMode={isOfflineMode}
+                onSelectForTranslation={handleSelectPhraseForStudio}
+              />
+            }
+          />
+          <Route
+            path="/offline"
+            element={
+              <OfflinePhrasebook onSelectPhrase={handleSelectPhraseForStudio} />
+            }
+          />
+          <Route path="*" element={<Navigate to="/operator" replace />} />
+        </Routes>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-slate-200 bg-white py-6 mt-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-          <div className="flex items-center space-x-2">
-            <span className="font-semibold text-slate-700">IndicVoice Live</span>
-            <span>•</span>
-            <span>Real-time Speech-to-Speech Translation</span>
-          </div>
+      {/* Footer (Shown on Operator routes; hidden on Audience route) */}
+      {activeView !== 'audience' && (
+        <footer className="border-t border-slate-200 bg-white py-6 mt-12">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
+            <div className="flex items-center space-x-2">
+              <span className="font-semibold text-slate-700">IndicVoice Live</span>
+              <span>•</span>
+              <span>Real-time Speech-to-Speech Translation</span>
+            </div>
 
-          <div className="flex items-center space-x-4">
-            <span>Supported: हिन्दी • தமிழ் • മലയാളം • ಕನ್ನಡ • తెలుగు • English</span>
-            <span>•</span>
-            <span className="font-mono text-emerald-600 font-semibold">Low-Latency Pipeline</span>
+            <div className="flex items-center space-x-4">
+              <span>Supported: हिन्दी • தமிழ் • മലയാളം • ಕನ್ನಡ • తెలుగు • English</span>
+              <span>•</span>
+              <span className="font-mono text-emerald-600 font-semibold">Low-Latency Pipeline</span>
+            </div>
           </div>
-        </div>
-      </footer>
+        </footer>
+      )}
     </div>
   );
 }

@@ -20,9 +20,9 @@ export interface UpcomingSessionConfig {
 
 export const DEFAULT_CONFERENCE_INFO: ConferenceMetadata = {
   id: 'conf-live-2026',
-  title: 'Live Multilingual Conference',
-  subtitle: 'Real-Time Simultaneous Speech Interpretation Across 6 Languages',
-  venue: 'Main Auditorium & Live Audio Stream',
+  title: '72nd Annual General Body Meeting',
+  subtitle: 'National Council of India, SSVP',
+  venue: 'Main Auditorium',
   date: 'Live Conference Session',
   activeTrack: 'Plenary Track & Floor Intercom',
 };

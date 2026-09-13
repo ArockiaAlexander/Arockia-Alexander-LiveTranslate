@@ -71,7 +71,12 @@ export function ConferenceView({
   const [conferenceInfo, setConferenceInfo] = useState<ConferenceMetadata>(() => {
     try {
       const saved = localStorage.getItem('indicvoice_upcoming_conference_info');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.title && parsed.title !== 'Live Multilingual Conference' && parsed.title !== 'National Multilingual Conference 2026') {
+          return parsed;
+        }
+      }
     } catch (e) {
       console.warn('Could not read saved conference info', e);
     }
@@ -310,9 +315,9 @@ export function ConferenceView({
   const handleSaveConfInfo = () => {
     setConferenceInfo((prev) => ({
       ...prev,
-      title: editTitle.trim() || 'Live Multilingual Conference',
+      title: editTitle.trim() || '72nd Annual General Body Meeting',
       venue: editVenue.trim() || 'Main Auditorium',
-      subtitle: editSubtitle.trim() || 'Real-Time Simultaneous Speech Interpretation',
+      subtitle: editSubtitle.trim() || 'National Council of India, SSVP',
     }));
     setIsEditingConfInfo(false);
   };

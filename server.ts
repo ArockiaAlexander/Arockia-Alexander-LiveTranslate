@@ -12,6 +12,7 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: '25mb' }));
+app.use(express.static(path.join(process.cwd(), 'public')));
 
 // Helper to convert 16-bit mono PCM to standard RIFF WAV buffer
 function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, numChannels = 1): Buffer {

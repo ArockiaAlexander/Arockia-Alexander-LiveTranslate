@@ -22,6 +22,7 @@ import { SystemVoiceStatus, LanguageCode, IndianVoicePersona } from '../types';
 import { LANGUAGE_LIST } from '../data/languages';
 import { indicSpeech } from '../services/indicSpeechService';
 import { AudienceShareModal } from './AudienceShareModal';
+import { SSVPLogo } from './SSVPLogo';
 
 interface HeaderProps {
   isOfflineMode: boolean;
@@ -29,8 +30,8 @@ interface HeaderProps {
   autoSpeak: boolean;
   onToggleAutoSpeak: () => void;
   voiceStatus: SystemVoiceStatus;
-  activeView: 'single' | 'conference' | 'dual' | 'dialect' | 'offline';
-  onChangeView: (view: 'single' | 'conference' | 'dual' | 'dialect' | 'offline') => void;
+  activeView: 'single' | 'conference' | 'dual' | 'dialect' | 'offline' | 'audience';
+  onChangeView: (view: 'single' | 'conference' | 'dual' | 'dialect' | 'offline' | 'audience') => void;
 }
 
 export function Header({
@@ -101,18 +102,16 @@ export function Header({
         <div className="flex items-center justify-between h-16">
           {/* Logo & App Name */}
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 via-orange-600 to-red-600 flex items-center justify-center text-white font-bold shadow-md shadow-orange-500/20">
-              <span className="text-xl">वाणी</span>
-            </div>
+            <SSVPLogo className="w-10 h-10" />
             <div>
               <div className="flex items-center space-x-2">
                 <h1 className="text-lg font-extrabold tracking-tight text-slate-900">IndicVoice Live</h1>
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-orange-100 text-orange-800">
-                  Real-Time
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                  SSVP NCI
                 </span>
               </div>
               <p className="text-xs text-slate-500 hidden sm:block">
-                Speech-to-Speech: Hindi • Tamil • Malayalam • Kannada • Telugu • English
+                72nd Annual General Body Meeting • National Council of India
               </p>
             </div>
           </div>

@@ -33,23 +33,25 @@ const DEFAULT_DEV_URL = 'https://ais-dev-fpravdw67cx6rugrayct4r-201467057452.asi
 export function AudienceShareModal({
   isOpen,
   onClose,
-  conferenceTitle = 'National Multilingual Conference 2026',
-  conferenceVenue = 'Auditorium Hall A',
+  conferenceTitle = '72nd Annual General Body Meeting',
+  conferenceVenue = 'National Council of India, SSVP',
 }: AudienceShareModalProps) {
   // Never default to localhost because phones cannot resolve container localhost
   const getSafeInitialUrl = () => {
+    let baseUrl = DEFAULT_SHARED_URL;
     if (typeof window !== 'undefined') {
       const origin = window.location.origin;
       if (origin && !origin.includes('localhost') && !origin.includes('127.0.0.1')) {
         if (origin.includes('ais-dev-')) {
-          return origin.replace('ais-dev-', 'ais-pre-');
+          baseUrl = origin.replace('ais-dev-', 'ais-pre-');
+        } else if (origin.startsWith('https://')) {
+          baseUrl = origin;
         }
-        if (origin.startsWith('https://')) {
-          return origin;
-        }
+      } else {
+        baseUrl = origin || DEFAULT_SHARED_URL;
       }
     }
-    return DEFAULT_SHARED_URL;
+    return baseUrl.endsWith('/audience') ? baseUrl : `${baseUrl.replace(/\/$/, '')}/audience`;
   };
 
   const [shareUrl, setShareUrl] = useState<string>(getSafeInitialUrl());
