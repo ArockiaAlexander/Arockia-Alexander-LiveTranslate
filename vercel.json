@@ -11,6 +11,10 @@
     {
       "src": "api/index.ts",
       "use": "@vercel/node"
+    },
+    {
+      "src": "api/health.ts",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
