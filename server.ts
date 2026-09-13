@@ -91,6 +91,10 @@ function getGenAIClient(): GoogleGenAI {
   return genAIClient;
 }
 
+function getSarvamApiKey(): string | undefined {
+  return process.env.SARVAM_API_KEY || process.env.SARVAM_KEY || process.env.SARVAM || process.env.SARVAM_TOKEN;
+}
+
 function toSarvamLangCode(lang?: string): string {
   const map: Record<string, string> = {
     hi: 'hi-IN',
@@ -110,7 +114,7 @@ function toSarvamLangCode(lang?: string): string {
 
 // Sarvam AI Translation Helper (mayura:v1)
 async function translateWithSarvam(text: string, srcLang: string, targetLang: string): Promise<string | null> {
-  const apiKey = process.env.SARVAM_API_KEY;
+  const apiKey = getSarvamApiKey();
   if (!apiKey) return null;
 
   try {
@@ -146,7 +150,7 @@ async function translateWithSarvam(text: string, srcLang: string, targetLang: st
 
 // Sarvam AI Text-to-Speech Helper (bulbul:v1)
 async function synthesizeWithSarvam(text: string, lang: string, speaker = 'ananya'): Promise<string | null> {
-  const apiKey = process.env.SARVAM_API_KEY;
+  const apiKey = getSarvamApiKey();
   if (!apiKey) return null;
 
   try {
@@ -188,7 +192,7 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     hasApiKey: Boolean(process.env.GEMINI_API_KEY),
-    hasSarvamKey: Boolean(process.env.SARVAM_API_KEY),
+    hasSarvamKey: Boolean(getSarvamApiKey()),
     timestamp: Date.now(),
   });
 });
@@ -215,7 +219,7 @@ app.post('/api/synthesize-speech', async (req, res) => {
   }
 
   // Attempt Tier 1: Sarvam AI Bulbul TTS for native Indian voice synthesis
-  if (process.env.SARVAM_API_KEY) {
+  if (getSarvamApiKey()) {
     try {
       const sarvamAudioBase64 = await synthesizeWithSarvam(cleanText, lang || 'hi', persona);
       if (sarvamAudioBase64) {
@@ -412,7 +416,7 @@ Provide:
   };
 
   // Attempt Tier 1: Sarvam AI (mayura:v1) - State-of-the-art South Asian language translation
-  if (process.env.SARVAM_API_KEY) {
+  if (getSarvamApiKey()) {
     try {
       const effectiveSrcLang = sourceLang && sourceLang !== 'auto' ? sourceLang : 'en';
       const sarvamText = await translateWithSarvam(text, effectiveSrcLang, targetLang);
