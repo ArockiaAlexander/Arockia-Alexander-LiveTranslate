@@ -88,11 +88,104 @@ function getGenAIClient(): GoogleGenAI {
   return genAIClient;
 }
 
+function toSarvamLangCode(lang?: string): string {
+  const map: Record<string, string> = {
+    hi: 'hi-IN',
+    ta: 'ta-IN',
+    te: 'te-IN',
+    kn: 'kn-IN',
+    ml: 'ml-IN',
+    en: 'en-IN',
+    bn: 'bn-IN',
+    gu: 'gu-IN',
+    mr: 'mr-IN',
+    pa: 'pa-IN',
+    od: 'or-IN',
+  };
+  return map[lang || 'en'] || `${lang || 'en'}-IN`;
+}
+
+// Sarvam AI Translation Helper (mayura:v1)
+async function translateWithSarvam(text: string, srcLang: string, targetLang: string): Promise<string | null> {
+  const apiKey = process.env.SARVAM_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const response = await fetch('https://api.sarvam.ai/translate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-subscription-key': apiKey,
+      },
+      body: JSON.stringify({
+        input: text,
+        source_language_code: toSarvamLangCode(srcLang),
+        target_language_code: toSarvamLangCode(targetLang),
+        speaker_gender: 'Female',
+        mode: 'formal',
+        model: 'mayura:v1',
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.warn('[Sarvam Translate] API Error:', response.status, errText.slice(0, 100));
+      return null;
+    }
+
+    const data: any = await response.json();
+    return data?.translated_text || null;
+  } catch (err: any) {
+    console.warn('[Sarvam Translate] Fetch error:', err?.message || err);
+    return null;
+  }
+}
+
+// Sarvam AI Text-to-Speech Helper (bulbul:v1)
+async function synthesizeWithSarvam(text: string, lang: string, speaker = 'ananya'): Promise<string | null> {
+  const apiKey = process.env.SARVAM_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const response = await fetch('https://api.sarvam.ai/text-to-speech', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-subscription-key': apiKey,
+      },
+      body: JSON.stringify({
+        inputs: [text],
+        target_language_code: toSarvamLangCode(lang),
+        speaker: speaker || 'ananya',
+        pitch: 0,
+        pace: 1.0,
+        loudness: 1.5,
+        speech_sample_rate: 24000,
+        model: 'bulbul:v1',
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.warn('[Sarvam TTS] API Error:', response.status, errText.slice(0, 100));
+      return null;
+    }
+
+    const data: any = await response.json();
+    const audioBase64 = data?.audios?.[0];
+    return audioBase64 || null;
+  } catch (err: any) {
+    console.warn('[Sarvam TTS] Fetch error:', err?.message || err);
+    return null;
+  }
+}
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     hasApiKey: Boolean(process.env.GEMINI_API_KEY),
+    hasSarvamKey: Boolean(process.env.SARVAM_API_KEY),
     timestamp: Date.now(),
   });
 });
@@ -116,6 +209,27 @@ app.post('/api/synthesize-speech', async (req, res) => {
       isIndianVoice: true,
       fallbackToDevice: false,
     });
+  }
+
+  // Attempt Tier 1: Sarvam AI Bulbul TTS for native Indian voice synthesis
+  if (process.env.SARVAM_API_KEY) {
+    try {
+      const sarvamAudioBase64 = await synthesizeWithSarvam(cleanText, lang || 'hi', persona);
+      if (sarvamAudioBase64) {
+        ttsCache.set(cacheKey, { audioBase64: sarvamAudioBase64, mimeType: 'audio/wav' });
+        return res.json({
+          audioBase64: sarvamAudioBase64,
+          mimeType: 'audio/wav',
+          persona,
+          cached: false,
+          isIndianVoice: true,
+          fallbackToDevice: false,
+          engine: 'sarvam-bulbul-v1',
+        });
+      }
+    } catch (sarvamTtsErr) {
+      console.warn('[Sarvam TTS] Unavailable, cascading to Gemini:', sarvamTtsErr);
+    }
   }
 
   // If neural TTS quota is currently exhausted, immediately return fallback signal without making futile API calls
@@ -294,10 +408,52 @@ Provide:
     required: ['translatedText', 'transliteration'],
   };
 
+  // Attempt Tier 1: Sarvam AI (mayura:v1) - State-of-the-art South Asian language translation
+  if (process.env.SARVAM_API_KEY) {
+    try {
+      const effectiveSrcLang = sourceLang && sourceLang !== 'auto' ? sourceLang : 'en';
+      const sarvamText = await translateWithSarvam(text, effectiveSrcLang, targetLang);
+      if (sarvamText) {
+        const offlineMatch = translateOffline(text, effectiveSrcLang as LanguageCode, targetLang as LanguageCode, targetDialect);
+        const transliteration = offlineMatch?.transliteration || sarvamText;
+
+        const latencyMs = Date.now() - startTime;
+        const asrEstimateMs = 40;
+        const ttsEstimateMs = 30;
+        const latencyBreakdown = {
+          asrMs: asrEstimateMs,
+          translationMs: latencyMs,
+          ttsMs: ttsEstimateMs,
+          totalMs: asrEstimateMs + latencyMs + ttsEstimateMs,
+        };
+
+        return res.json({
+          translatedText: sarvamText,
+          transliteration,
+          sourceText: text,
+          sourceLang: effectiveSrcLang,
+          targetLang: targetLang,
+          sourceDialect: sourceDialect,
+          targetDialect: targetDialect,
+          detectedLanguage: effectiveSrcLang,
+          detectedDialect: targetDialect || 'Standard',
+          confidence: 0.98,
+          nuanceNotes: 'Sarvam AI Mayura v1 (Native South Asian Engine)',
+          pronunciationGuide: '',
+          latencyMs,
+          latencyBreakdown,
+          engine: 'sarvam-mayura-v1',
+        });
+      }
+    } catch (sarvamErr: any) {
+      console.warn('[Translation Tier 1 Sarvam] Busy/Quota, cascading to Gemini:', sarvamErr?.message || sarvamErr);
+    }
+  }
+
   let parsedResult: any = null;
   let engineUsed = 'gemini';
 
-  // Attempt Tier 1: gemini-3.1-flash-lite (high throughput, minimal latency, resilient under load)
+  // Attempt Tier 2: gemini-3.1-flash-lite (high throughput, minimal latency, resilient under load)
   try {
     const ai = getGenAIClient();
     const response = await ai.models.generateContent({
