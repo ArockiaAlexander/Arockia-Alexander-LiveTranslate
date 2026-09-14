@@ -156,10 +156,19 @@ export function ConferenceView({
     byLanguage: {},
     audience: [],
   });
-  const [deliveryMode, setDeliveryMode] = useState<LiveDeliveryMode>('v1');
+  const [deliveryMode, setDeliveryMode] = useState<LiveDeliveryMode>(() => {
+    try {
+      const saved = localStorage.getItem('indicvoice_delivery_mode');
+      if (saved === 'v1' || saved === 'v2' || saved === 'v3') return saved;
+    } catch {}
+    return 'v2';
+  });
 
   const handleDeliveryModeChange = (mode: LiveDeliveryMode) => {
     setDeliveryMode(mode);
+    try {
+      localStorage.setItem('indicvoice_delivery_mode', mode);
+    } catch {}
     liveConferenceTransport.publishDeliveryMode(mode);
   };
 
@@ -535,14 +544,6 @@ export function ConferenceView({
           },
         });
         publishOperatorActivity('live', 'New translation delivered to audience.');
-
-        // Voiced in attendee's headset channel in real-time
-        if (autoSpeak && !playbackState.isPlaying) {
-          indicSpeech.speak(transData.translatedText, listeningLang, {
-            transliteration: transData.transliteration,
-            speed: playbackSpeed,
-          });
-        }
       }
     } catch (e) {
       console.warn('Live conference translation error:', e);

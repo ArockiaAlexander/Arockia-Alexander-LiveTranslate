@@ -18,7 +18,7 @@ export interface SpeakOptions {
 
 class IndicSpeechService {
   private currentPersona: IndianVoicePersona = 'ananya';
-  private currentEngine: 'neural' | 'device' = 'device'; // Indian Voice (Device Engine) is default
+  private currentEngine: 'neural' | 'device' = 'neural';
   private currentSpeed: 'normal' | 'slow' = 'normal';
   private currentVolume: number = 1.0;
   private isMuted: boolean = false;
@@ -43,8 +43,8 @@ class IndicSpeechService {
         if (savedEngine && ['neural', 'device'].includes(savedEngine)) {
           this.currentEngine = savedEngine;
         } else {
-          this.currentEngine = 'device'; // Indian Voice Engine is the default voice
-          localStorage.setItem('indic_voice_engine', 'device');
+          this.currentEngine = 'neural';
+          localStorage.setItem('indic_voice_engine', 'neural');
         }
 
         const savedSpeed = localStorage.getItem('indic_voice_speed') as 'normal' | 'slow' | null;
