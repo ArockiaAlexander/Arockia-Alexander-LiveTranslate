@@ -602,10 +602,12 @@ export function ConferenceView({
       conferenceSpeechManager.stopAudio();
       setAllSegments([]);
       setActiveSegmentIndex(0);
-      liveConferenceTransport.clearSession();
       try {
         localStorage.removeItem('indicvoice_live_proceedings');
       } catch (e) {}
+      // Notify connected audience pages so they clear their transcript and
+      // stop any audio immediately.
+      liveConferenceTransport.clearSession();
     }
   };
 

@@ -129,14 +129,20 @@ export function AudienceView({ onSwitchToOperator }: AudienceViewProps) {
     });
 
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'indicvoice_live_proceedings' && e.newValue) {
+      if (e.key === 'indicvoice_live_proceedings') {
+        if (e.newValue === null) {
+          setAllSegments([]);
+          setActiveSegmentIndex(0);
+          conferenceSpeechManager.stopAudio();
+          indicSpeech.stop();
+          return;
+        }
+
         try {
           const updated = JSON.parse(e.newValue);
           if (Array.isArray(updated)) {
             setAllSegments(updated);
-            if (updated.length > 0) {
-              setActiveSegmentIndex(updated.length - 1);
-            }
+            setActiveSegmentIndex(updated.length > 0 ? updated.length - 1 : 0);
           }
         } catch {}
       }
@@ -182,7 +188,11 @@ export function AudienceView({ onSwitchToOperator }: AudienceViewProps) {
       onClear: () => {
         setAllSegments([]);
         setActiveSegmentIndex(0);
+        conferenceSpeechManager.stopAudio();
         indicSpeech.stop();
+        try {
+          localStorage.removeItem('indicvoice_live_proceedings');
+        } catch {}
       },
     });
     return () => liveConferenceTransport.disconnect();
