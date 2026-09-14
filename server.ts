@@ -240,6 +240,14 @@ const ttsCache = new Map<string, { audioBase64: string; mimeType: string }>();
 
 // Quota backoff tracker for gemini-3.1-flash-tts (free tier has strict 10 req/day limit)
 let ttsQuotaExhaustedUntil = 0;
+const SUPPORTED_TTS_PERSONAS = ['ananya', 'arjun', 'pooja'] as const;
+type TtsPersona = (typeof SUPPORTED_TTS_PERSONAS)[number];
+
+function normalizeTtsPersona(persona: unknown): TtsPersona {
+  return typeof persona === 'string' && SUPPORTED_TTS_PERSONAS.includes(persona as TtsPersona)
+    ? persona as TtsPersona
+    : 'ananya';
+}
 
 function getGeminiApiKey(): string | undefined {
   if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY;
@@ -419,7 +427,8 @@ app.get('/api/health', (req, res) => {
 
 // AI Neural Indian Voice Speech Synthesis Endpoint
 app.post('/api/synthesize-speech', async (req, res) => {
-  const { text, lang, persona = 'ananya', speed = 'normal' } = req.body;
+  const { text, lang, persona: requestedPersona = 'ananya', speed = 'normal' } = req.body;
+  const persona = normalizeTtsPersona(requestedPersona);
   if (!text || typeof text !== 'string') {
     return res.status(400).json({ error: 'Text string is required for speech synthesis.' });
   }

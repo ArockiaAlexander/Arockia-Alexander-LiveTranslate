@@ -176,6 +176,7 @@ export function ConferenceView({
     liveConferenceTransport.publishOperatorStatus({
       activity,
       updatedAt: Date.now(),
+      voicePersona,
       speakerName: speakerName || 'Stage Speaker',
       speakerLanguage: speakerLang,
       message,

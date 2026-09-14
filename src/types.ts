@@ -158,6 +158,7 @@ export interface LiveOperatorStatus {
   activity: LiveOperatorActivity;
   updatedAt: number;
   deliveryMode?: LiveDeliveryMode;
+  voicePersona?: IndianVoicePersona;
   speakerName?: string;
   speakerLanguage?: LanguageCode;
   message?: string;

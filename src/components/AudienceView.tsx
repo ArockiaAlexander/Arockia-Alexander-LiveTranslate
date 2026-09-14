@@ -158,7 +158,13 @@ export function AudienceView({ onSwitchToOperator }: AudienceViewProps) {
   useEffect(() => {
     liveConferenceTransport.connect('audience', listeningLang, {
       onStatus: setLiveConnectionStatus,
-      onOperatorStatus: setOperatorStatus,
+      onOperatorStatus: (status) => {
+        setOperatorStatus(status);
+        if (status.voicePersona) {
+          setVoicePersona(status.voicePersona);
+          indicSpeech.setPersona(status.voicePersona);
+        }
+      },
       onSegment: (segment) => {
         setAllSegments((previous) => {
           if (previous.some((item) => item.id === segment.id)) return previous;

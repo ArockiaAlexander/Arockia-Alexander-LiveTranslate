@@ -107,6 +107,14 @@ function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, numChannels = 1): Buffe
 
 const ttsCache = new Map<string, { audioBase64: string; mimeType: string }>();
 let ttsQuotaExhaustedUntil = 0;
+const SUPPORTED_TTS_PERSONAS = ['ananya', 'arjun', 'pooja'] as const;
+type TtsPersona = (typeof SUPPORTED_TTS_PERSONAS)[number];
+
+function normalizeTtsPersona(persona: unknown): TtsPersona {
+  return typeof persona === 'string' && SUPPORTED_TTS_PERSONAS.includes(persona as TtsPersona)
+    ? persona as TtsPersona
+    : 'ananya';
+}
 
 let genAIClient: GoogleGenAI | null = null;
 function getGenAIClient(): GoogleGenAI {
@@ -228,7 +236,8 @@ app.get(['/api/health', '/health'], (req, res) => {
 
 // Synthesize speech endpoint
 app.post(['/api/synthesize-speech', '/synthesize-speech'], async (req, res) => {
-  const { text, lang, persona = 'ananya', speed = 'normal' } = req.body;
+  const { text, lang, persona: requestedPersona = 'ananya', speed = 'normal' } = req.body;
+  const persona = normalizeTtsPersona(requestedPersona);
   if (!text || typeof text !== 'string') {
     return res.status(400).json({ error: 'Text string is required for speech synthesis.' });
   }
