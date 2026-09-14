@@ -8,7 +8,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { GoogleGenAI, Type, ThinkingLevel, Modality } from '@google/genai';
 import { translateOffline } from './src/services/offlineDictionary';
 import { createDemoWeather } from './src/services/demoWeather';
-import { LanguageCode, ConferenceSpeechSegment, LiveAudiencePresence, LiveClientMessage, LiveOperatorStatus, LivePresenceSnapshot } from './src/types';
+import { LanguageCode, ConferenceSpeechSegment, LiveAudiencePresence, LiveClientMessage, LiveDeliveryMode, LiveOperatorStatus, LivePresenceSnapshot } from './src/types';
 
 if (fs.existsSync('.env.local')) {
   dotenv.config({ path: '.env.local' });
@@ -34,7 +34,7 @@ interface LiveClient {
 }
 
 const liveClients = new Map<string, LiveClient>();
-let liveOperatorStatus: LiveOperatorStatus = { activity: 'offline', updatedAt: Date.now() };
+let liveOperatorStatus: LiveOperatorStatus = { activity: 'offline', deliveryMode: 'v1', updatedAt: Date.now() };
 
 function sendLiveMessage(client: LiveClient, message: object): void {
   if (client.socket.readyState === WebSocket.OPEN) client.socket.send(JSON.stringify(message));
@@ -74,8 +74,11 @@ function broadcastToAudience(message: object): void {
 }
 
 function broadcastOperatorStatus(status: LiveOperatorStatus): void {
-  liveOperatorStatus = status;
-  broadcastToAudience({ type: 'operator-status', status });
+  liveOperatorStatus = {
+    ...status,
+    deliveryMode: status.deliveryMode || liveOperatorStatus.deliveryMode || 'v1',
+  };
+  broadcastToAudience({ type: 'operator-status', status: liveOperatorStatus });
 }
 
 function removeLiveClient(id: string): void {
@@ -123,7 +126,7 @@ liveSocketServer.on('connection', (socket) => {
         liveClients.set(connectionId, client);
         sendLiveMessage(client, { type: 'joined', connectionId, sessionId: LIVE_SESSION_ID, role: message.role });
         if (message.role === 'operator') {
-          broadcastOperatorStatus({ activity: 'standby', updatedAt: now });
+          broadcastOperatorStatus({ activity: 'standby', deliveryMode: liveOperatorStatus.deliveryMode || 'v1', updatedAt: now });
         } else {
           broadcastPresence();
           sendLiveMessage(client, { type: 'operator-status', status: liveOperatorStatus });
@@ -138,6 +141,9 @@ liveSocketServer.on('connection', (socket) => {
         if (client.role === 'audience') broadcastPresence();
       } else if (message.type === 'operator-status' && client.role === 'operator') {
         broadcastOperatorStatus(message.status);
+      } else if (message.type === 'delivery-mode' && client.role === 'operator') {
+        const mode: LiveDeliveryMode = message.mode;
+        broadcastOperatorStatus({ ...liveOperatorStatus, deliveryMode: mode, updatedAt: Date.now() });
       } else if (message.type === 'segment' && client.role === 'operator') {
         broadcastToAudience({ type: 'segment', segment: message.segment });
       } else if (message.type === 'clear' && client.role === 'operator') {
@@ -148,11 +154,11 @@ liveSocketServer.on('connection', (socket) => {
     }
   });
   socket.on('close', () => {
-    if (client?.role === 'operator') broadcastOperatorStatus({ activity: 'offline', updatedAt: Date.now() });
+    if (client?.role === 'operator') broadcastOperatorStatus({ activity: 'offline', deliveryMode: liveOperatorStatus.deliveryMode || 'v1', updatedAt: Date.now() });
     removeLiveClient(connectionId);
   });
   socket.on('error', () => {
-    if (client?.role === 'operator') broadcastOperatorStatus({ activity: 'offline', updatedAt: Date.now() });
+    if (client?.role === 'operator') broadcastOperatorStatus({ activity: 'offline', deliveryMode: liveOperatorStatus.deliveryMode || 'v1', updatedAt: Date.now() });
     removeLiveClient(connectionId);
   });
 });
@@ -250,6 +256,10 @@ function getSarvamApiKey(): string | undefined {
   // Case-insensitive process.env scan for any key containing 'sarvam'
   const keyName = Object.keys(process.env).find((k) => k.toLowerCase().includes('sarvam'));
   return keyName ? process.env[keyName] : undefined;
+}
+
+function isLiveAudioV2Enabled(): boolean {
+  return process.env.LIVE_AUDIO_V2_ENABLED !== 'false';
 }
 
 app.get('/api/weather', (req, res) => {
@@ -395,6 +405,7 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     hasApiKey: Boolean(geminiKey),
     hasSarvamKey: Boolean(sarvamKey),
+    liveAudioV2Enabled: isLiveAudioV2Enabled(),
     liveTransport: 'websocket',
     liveSessionId: LIVE_SESSION_ID,
     audienceConnected: getPresenceSnapshot().connected,
@@ -413,6 +424,15 @@ app.post('/api/synthesize-speech', async (req, res) => {
     return res.status(400).json({ error: 'Text string is required for speech synthesis.' });
   }
 
+  if (!isLiveAudioV2Enabled()) {
+    return res.json({
+      fallbackToDevice: true,
+      audioVersion: 'v1',
+      reason: 'Server audio V2 is disabled.',
+      isIndianVoice: false,
+    });
+  }
+
   const cleanText = text.trim().slice(0, 600);
   const cacheKey = `${lang || 'hi'}_${persona}_${speed}_${cleanText.toLowerCase()}`;
   if (ttsCache.has(cacheKey)) {
@@ -424,6 +444,7 @@ app.post('/api/synthesize-speech', async (req, res) => {
       cached: true,
       isIndianVoice: true,
       fallbackToDevice: false,
+      audioVersion: 'v2',
     });
   }
 
@@ -441,6 +462,7 @@ app.post('/api/synthesize-speech', async (req, res) => {
           isIndianVoice: true,
           fallbackToDevice: false,
           engine: 'sarvam-bulbul-v1',
+                  audioVersion: 'v2',
         });
       }
     } catch (sarvamTtsErr) {
@@ -452,6 +474,7 @@ app.post('/api/synthesize-speech', async (req, res) => {
   if (Date.now() < ttsQuotaExhaustedUntil) {
     return res.json({
       fallbackToDevice: true,
+      audioVersion: 'v1',
       quotaExhausted: true,
       error: 'Daily neural voice quota reached. Switched to authentic device Indian voice.',
       isIndianVoice: false,

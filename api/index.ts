@@ -65,6 +65,10 @@ export function getGeminiApiKey(): string | undefined {
   return keyName ? process.env[keyName] : undefined;
 }
 
+function isLiveAudioV2Enabled(): boolean {
+  return process.env.LIVE_AUDIO_V2_ENABLED !== 'false';
+}
+
 export function getSarvamApiKey(): string | undefined {
   if (process.env.SARVAM_API_KEY) return process.env.SARVAM_API_KEY;
   if (process.env.SARVAM_KEY) return process.env.SARVAM_KEY;
@@ -214,6 +218,7 @@ app.get(['/api/health', '/health'], (req, res) => {
     status: 'ok',
     hasApiKey: Boolean(geminiKey),
     hasSarvamKey: Boolean(sarvamKey),
+    liveAudioV2Enabled: isLiveAudioV2Enabled(),
     detectedEnvKeys: Object.keys(process.env).filter(
       (k) => k.toLowerCase().includes('sarvam') || k.toLowerCase().includes('gemini')
     ),
@@ -228,6 +233,15 @@ app.post(['/api/synthesize-speech', '/synthesize-speech'], async (req, res) => {
     return res.status(400).json({ error: 'Text string is required for speech synthesis.' });
   }
 
+  if (!isLiveAudioV2Enabled()) {
+    return res.json({
+      fallbackToDevice: true,
+      audioVersion: 'v1',
+      reason: 'Server audio V2 is disabled.',
+      isIndianVoice: false,
+    });
+  }
+
   const cleanText = text.trim().slice(0, 600);
   const cacheKey = `${lang || 'hi'}_${persona}_${speed}_${cleanText.toLowerCase()}`;
   if (ttsCache.has(cacheKey)) {
@@ -239,6 +253,7 @@ app.post(['/api/synthesize-speech', '/synthesize-speech'], async (req, res) => {
       cached: true,
       isIndianVoice: true,
       fallbackToDevice: false,
+      audioVersion: 'v2',
     });
   }
 
@@ -255,6 +270,7 @@ app.post(['/api/synthesize-speech', '/synthesize-speech'], async (req, res) => {
           isIndianVoice: true,
           fallbackToDevice: false,
           engine: 'sarvam-bulbul-v1',
+          audioVersion: 'v2',
         });
       }
     } catch (error) {
@@ -265,6 +281,7 @@ app.post(['/api/synthesize-speech', '/synthesize-speech'], async (req, res) => {
   if (Date.now() < ttsQuotaExhaustedUntil) {
     return res.json({
       fallbackToDevice: true,
+      audioVersion: 'v1',
       quotaExhausted: true,
       error: 'Daily neural voice quota reached. Switched to authentic device Indian voice.',
       isIndianVoice: false,

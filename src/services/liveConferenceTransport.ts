@@ -3,6 +3,7 @@ import {
   LiveClientMessage,
   LivePresenceSnapshot,
   LiveOperatorStatus,
+  LiveDeliveryMode,
   LiveServerMessage,
   ConferenceSpeechSegment,
 } from '../types';
@@ -86,6 +87,10 @@ class LiveConferenceTransport {
 
   public publishOperatorStatus(status: LiveOperatorStatus): void {
     if (this.role === 'operator') this.send({ type: 'operator-status', status });
+  }
+
+  public publishDeliveryMode(mode: LiveDeliveryMode): void {
+    if (this.role === 'operator') this.send({ type: 'delivery-mode', mode });
   }
 
   public setLanguage(language: LanguageCode): void {

@@ -42,6 +42,7 @@ import {
   LatencyBreakdown,
   LivePresenceSnapshot,
   LiveOperatorActivity,
+  LiveDeliveryMode,
 } from '../types';
 import { SUPPORTED_LANGUAGES, LANGUAGE_LIST } from '../data/languages';
 import {
@@ -155,6 +156,12 @@ export function ConferenceView({
     byLanguage: {},
     audience: [],
   });
+  const [deliveryMode, setDeliveryMode] = useState<LiveDeliveryMode>('v1');
+
+  const handleDeliveryModeChange = (mode: LiveDeliveryMode) => {
+    setDeliveryMode(mode);
+    liveConferenceTransport.publishDeliveryMode(mode);
+  };
 
   const publishOperatorActivity = (activity: LiveOperatorActivity, message?: string) => {
     liveConferenceTransport.publishOperatorStatus({
@@ -261,7 +268,10 @@ export function ConferenceView({
   useEffect(() => {
     liveConferenceTransport.connect('operator', listeningLang, {
       onPresence: setAudiencePresence,
-      onStatus: setLiveConnectionStatus,
+      onStatus: (status) => {
+        setLiveConnectionStatus(status);
+        if (status === 'connected') liveConferenceTransport.publishDeliveryMode(deliveryMode);
+      },
     });
     return () => liveConferenceTransport.disconnect();
   }, []);
@@ -847,7 +857,7 @@ export function ConferenceView({
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2" aria-label="Audience connection status">
+        <div className="mt-4 grid grid-cols-2 sm:grid-cols-5 gap-2" aria-label="Audience connection status">
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Live transport</div>
             <div className={`mt-1 text-sm font-black ${liveConnectionStatus === 'connected' ? 'text-emerald-700' : 'text-amber-700'}`}>
@@ -866,6 +876,32 @@ export function ConferenceView({
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Channels</div>
             <div className="mt-1 text-xs font-bold text-slate-800">
               {Object.entries(audiencePresence.byLanguage).filter(([, count]) => count).map(([language, count]) => `${language.toUpperCase()}: ${count}`).join(' • ') || 'No listeners yet'}
+            </div>
+          </div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Delivery mode</div>
+            <div className="mt-1 text-sm font-black text-amber-950">{deliveryMode.toUpperCase()}</div>
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-xl border border-indigo-200 bg-indigo-50/60 p-3" aria-label="Live delivery mode control">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <div className="text-xs font-black uppercase tracking-wider text-indigo-900">Audience delivery mode</div>
+              <div className="mt-1 text-xs text-indigo-800">Changes apply immediately to connected audience devices.</div>
+            </div>
+            <div className="flex gap-2" role="group" aria-label="Select delivery mode">
+              {(['v1', 'v2', 'v3'] as LiveDeliveryMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => handleDeliveryModeChange(mode)}
+                  className={`rounded-lg border px-3 py-2 text-xs font-black transition-colors ${deliveryMode === mode ? 'border-indigo-700 bg-indigo-700 text-white' : 'border-indigo-200 bg-white text-indigo-900 hover:bg-indigo-100'}`}
+                  aria-pressed={deliveryMode === mode}
+                >
+                  {mode.toUpperCase()}
+                </button>
+              ))}
             </div>
           </div>
         </div>

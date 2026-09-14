@@ -152,9 +152,12 @@ export type LiveOperatorActivity =
   | 'live'
   | 'error';
 
+export type LiveDeliveryMode = 'v1' | 'v2' | 'v3';
+
 export interface LiveOperatorStatus {
   activity: LiveOperatorActivity;
   updatedAt: number;
+  deliveryMode?: LiveDeliveryMode;
   speakerName?: string;
   speakerLanguage?: LanguageCode;
   message?: string;
@@ -164,6 +167,7 @@ export type LiveClientMessage =
   | { type: 'join'; role: 'operator' | 'audience'; sessionId: string; language?: LanguageCode }
   | { type: 'heartbeat'; language?: LanguageCode; audioReady?: boolean }
   | { type: 'operator-status'; status: LiveOperatorStatus }
+  | { type: 'delivery-mode'; mode: LiveDeliveryMode }
   | { type: 'segment'; segment: ConferenceSpeechSegment }
   | { type: 'clear' };
 

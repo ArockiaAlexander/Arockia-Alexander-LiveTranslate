@@ -404,6 +404,7 @@ export function AudienceView({ onSwitchToOperator }: AudienceViewProps) {
           <div className="min-w-0">
             <div className="text-xs font-black uppercase tracking-wider">Operator activity</div>
             <div className="mt-1 text-sm font-bold">{operatorActivityCopy[operatorStatus.activity]}</div>
+            <div className="mt-1 text-xs font-bold">Delivery mode: {(operatorStatus.deliveryMode || 'v1').toUpperCase()}</div>
             {operatorStatus.speakerLanguage && (
               <div className="mt-1 text-xs opacity-75">
                 Speaking in {SUPPORTED_LANGUAGES[operatorStatus.speakerLanguage]?.name || operatorStatus.speakerLanguage} • Your channel: {SUPPORTED_LANGUAGES[listeningLang]?.name}
