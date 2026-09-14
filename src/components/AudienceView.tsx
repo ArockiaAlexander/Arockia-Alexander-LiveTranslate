@@ -190,24 +190,17 @@ export function AudienceView({ onSwitchToOperator }: AudienceViewProps) {
 
   // Update listening language
   const handleSelectLanguage = (lang: LanguageCode) => {
+    if (lang === listeningLangRef.current) return;
+
+    // V1 policy: never replay or mix a partially spoken segment after a
+    // language change. The next complete live segment uses the new language.
+    listeningLangRef.current = lang;
+    indicSpeech.stop();
     setListeningLang(lang);
     conferenceSpeechManager.setListeningLang(lang);
     try {
       localStorage.setItem('indicvoice_listening_channel', lang);
     } catch {}
-
-    // If tuned in, play the current segment in this newly selected language
-    if (isAudioTunedIn && allSegments.length > 0) {
-      const activeSeg = allSegments[activeSegmentIndex] || allSegments[allSegments.length - 1];
-      if (activeSeg) {
-        const trans = activeSeg.translations[lang];
-        indicSpeech.setPersona(voicePersona);
-        indicSpeech.speak(trans?.translatedText || activeSeg.speakerText, lang, {
-          transliteration: trans?.transliteration,
-          speed: playbackSpeed,
-        });
-      }
-    }
   };
 
   // Playback volume

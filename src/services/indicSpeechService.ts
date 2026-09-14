@@ -25,6 +25,8 @@ class IndicSpeechService {
   private currentAudio: HTMLAudioElement | null = null;
   private isCurrentlySpeaking = false;
   private neuralQuotaExhausted = false;
+  // Invalidates delayed neural-audio responses after stop() or a new utterance.
+  private speechRequestId = 0;
   private listeners: Set<(isSpeaking: boolean) => void> = new Set();
   private volumeLevelListeners: Set<(level: number) => void> = new Set();
   private volumeLevelTimer: any = null;
@@ -186,6 +188,7 @@ class IndicSpeechService {
   }
 
   public stop() {
+    this.speechRequestId += 1;
     this.stopOutputLevelSimulation();
     if (this.currentAudio) {
       try {
@@ -213,6 +216,7 @@ class IndicSpeechService {
     if (!text || !text.trim()) return false;
 
     this.stop();
+    const requestId = this.speechRequestId;
 
     const speed = options.speed || this.currentSpeed;
     const isOnline = typeof navigator !== 'undefined' && navigator.onLine;
@@ -235,8 +239,12 @@ class IndicSpeechService {
           }),
         });
 
+        // The audience may have changed language while the provider was
+        // generating audio. Never start audio for an obsolete request.
+        if (requestId !== this.speechRequestId) return false;
+
         if (!res.ok) {
-          return this.fallbackToOfflineTTS(text, lang, options);
+          return this.fallbackToOfflineTTS(text, lang, options, requestId);
         }
 
         const data = await res.json();
@@ -245,7 +253,7 @@ class IndicSpeechService {
         }
 
         if (data.fallbackToDevice || !data.audioBase64) {
-          return this.fallbackToOfflineTTS(text, lang, options);
+          return this.fallbackToOfflineTTS(text, lang, options, requestId);
         }
 
         const audioUri = `data:${data.mimeType || 'audio/wav'};base64,${data.audioBase64}`;
@@ -254,22 +262,25 @@ class IndicSpeechService {
         this.currentAudio = audio;
 
         audio.onended = () => {
+          if (requestId !== this.speechRequestId) return;
           this.currentAudio = null;
           this.notifyListeners(false);
           if (options.onEnd) options.onEnd();
         };
 
         audio.onerror = (e) => {
+          if (requestId !== this.speechRequestId) return;
           console.warn('Audio playback error, falling back to device Indian voice:', e);
           this.currentAudio = null;
-          this.fallbackToOfflineTTS(text, lang, options);
+          this.fallbackToOfflineTTS(text, lang, options, requestId);
         };
 
         await audio.play();
         return true;
       } catch (err) {
+        if (requestId !== this.speechRequestId) return false;
         console.warn('Neural Indian voice synthesis failed, falling back to device voice:', err);
-        return this.fallbackToOfflineTTS(text, lang, options);
+        return this.fallbackToOfflineTTS(text, lang, options, requestId);
       }
     }
 
@@ -281,6 +292,7 @@ class IndicSpeechService {
     text: string,
     lang: LanguageCode,
     options: SpeakOptions,
+    requestId: number = this.speechRequestId,
   ): boolean {
     const rate = options.rate ?? (options.speed === 'slow' || this.currentSpeed === 'slow' ? 0.78 : 0.92);
 
@@ -291,14 +303,17 @@ class IndicSpeechService {
       pitch: options.pitch,
       volume: this.isMuted ? 0 : Math.min(1.0, options.volume ?? this.currentVolume),
       onStart: () => {
+        if (requestId !== this.speechRequestId) return;
         this.notifyListeners(true);
         if (options.onStart) options.onStart();
       },
       onEnd: () => {
+        if (requestId !== this.speechRequestId) return;
         this.notifyListeners(false);
         if (options.onEnd) options.onEnd();
       },
       onError: (err) => {
+        if (requestId !== this.speechRequestId) return;
         this.notifyListeners(false);
         if (options.onError) options.onError(err);
       },

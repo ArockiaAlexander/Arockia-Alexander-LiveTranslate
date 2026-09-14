@@ -298,19 +298,13 @@ class ConferenceSpeechManager {
     if (this.listeningLang === lang) return;
     this.listeningLang = lang;
 
-    // If currently playing audio, stop and restart from current index in the new listening language
-    if (this.isAudioPlaying && this.currentPlayingIndex >= 0) {
-      indicSpeech.stop();
-      this.notifyPlaybackState();
-      // Re-trigger current index in the new language if segment exists
-      setTimeout(() => {
-        if (this.currentPlayingIndex >= 0 && this.currentPlayingIndex < this.queueSegments.length) {
-          this.playSegment(this.currentPlayingIndex);
-        }
-      }, 100);
-    } else {
-      this.notifyPlaybackState();
-    }
+    // A language change applies to the next complete segment. Do not replay
+    // the partially spoken segment in another language.
+    this.userPaused = true;
+    this.isAudioPlaying = false;
+    this.currentPlayingIndex = -1;
+    indicSpeech.stop();
+    this.notifyPlaybackState();
   }
 
   public setPlaybackSpeed(speed: 'normal' | 'slow'): void {
