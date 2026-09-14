@@ -176,7 +176,7 @@ export function ConferenceView({
     liveConferenceTransport.publishOperatorStatus({
       activity,
       updatedAt: Date.now(),
-      voicePersona,
+      voicePersona: indicSpeech.getConfig().persona,
       speakerName: speakerName || 'Stage Speaker',
       speakerLanguage: speakerLang,
       message,
@@ -237,6 +237,7 @@ export function ConferenceView({
 
   const segmentsContainerRef = useRef<HTMLDivElement>(null);
   const audioLevelIntervalRef = useRef<any>(null);
+  const hasMountedProceedingsRef = useRef(false);
 
   // Save Conference Info when updated
   useEffect(() => {
@@ -292,6 +293,10 @@ export function ConferenceView({
 
   // Auto-scroll teleprompter to active segment
   useEffect(() => {
+    if (!hasMountedProceedingsRef.current) {
+      hasMountedProceedingsRef.current = true;
+      return;
+    }
     if (!autoScroll || !segmentsContainerRef.current) return;
     const activeEl = document.getElementById(`conference-seg-${activeSegmentIndex}`);
     if (activeEl) {
@@ -478,19 +483,37 @@ export function ConferenceView({
     const segmentStartTime = Date.now();
 
     try {
-      // Call translation API for the attendee's selected listening channel
-      const res = await fetch('/api/translate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: spokenText,
-          sourceLang: spokenLang,
-          targetLang: listeningLang,
+      // V1 prepares every audience language so attendees choose their channel independently.
+      const translatedEntries = await Promise.all(
+        LANGUAGE_LIST.filter((lang) => lang.code !== spokenLang).map(async (lang) => {
+          const response = await fetch('/api/translate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              text: spokenText,
+              sourceLang: spokenLang,
+              targetLang: lang.code,
+            }),
+          });
+          if (!response.ok) return null;
+          return [lang.code, await response.json()] as const;
         }),
+      );
+
+      const translations: ConferenceSpeechSegment['translations'] = {
+        ...newSegment.translations,
+      };
+      translatedEntries.forEach((entry) => {
+        if (!entry) return;
+        const [language, translation] = entry;
+        translations[language] = {
+          translatedText: translation.translatedText,
+          transliteration: translation.transliteration,
+          nuanceNotes: translation.nuanceNotes,
+        };
       });
 
-      if (res.ok) {
-        const transData = await res.json();
+      if (Object.keys(translations).length > 0) {
         const translationTimeMs = Date.now() - segmentStartTime;
         const asrMs = latencyProfile === 'ultra-low' ? 55 : latencyProfile === 'balanced' ? 75 : 110;
         const ttsMs = latencyProfile === 'ultra-low' ? 35 : latencyProfile === 'balanced' ? 50 : 80;
@@ -515,14 +538,7 @@ export function ConferenceView({
                 latencyMs: totalMs,
                 latencyBreakdown: breakdown,
                 audioVolumeLevel: audioLevel > 0 ? audioLevel : 0.75,
-                translations: {
-                  ...s.translations,
-                  [listeningLang]: {
-                    translatedText: transData.translatedText,
-                    transliteration: transData.transliteration,
-                    nuanceNotes: transData.nuanceNotes,
-                  },
-                },
+                translations,
               };
             }
             return s;
@@ -535,14 +551,7 @@ export function ConferenceView({
           latencyMs: totalMs,
           latencyBreakdown: breakdown,
           audioVolumeLevel: audioLevel > 0 ? audioLevel : 0.75,
-          translations: {
-            ...newSegment.translations,
-            [listeningLang]: {
-              translatedText: transData.translatedText,
-              transliteration: transData.transliteration,
-              nuanceNotes: transData.nuanceNotes,
-            },
-          },
+          translations,
         });
         publishOperatorActivity('live', 'New translation delivered to audience.');
       }
@@ -1040,204 +1049,6 @@ export function ConferenceView({
                 </button>
               );
             })}
-          </div>
-        </div>
-      </div>
-
-      {/* ============================================================ */}
-      {/* 2. CORE USER MANDATE: "USER SELECTION OF LANGUAGE TO BE HEARD"*/}
-      {/* ============================================================ */}
-      <div className="bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-950 text-white rounded-2xl p-5 sm:p-6 shadow-xl border border-slate-800 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-400">
-                <Headphones className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="font-extrabold text-sm sm:text-base tracking-tight text-white">
-                    User Selection of Language to be heard
-                  </h2>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-500/30 text-indigo-300 border border-indigo-400/40">
-                    Headset Channel
-                  </span>
-                </div>
-                <p className="text-xs text-slate-300">
-                  Select which language you want to hear through your headphones throughout the entire conference:
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-2 bg-white/10 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-white/10 text-xs">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-slate-300">Tuned Track:</span>
-                <span className="font-bold text-amber-300">
-                  {SUPPORTED_LANGUAGES[listeningLang]?.name} ({SUPPORTED_LANGUAGES[listeningLang]?.nativeName})
-                </span>
-              </div>
-
-              {/* Persona Selector */}
-              <div className="flex items-center gap-1.5 bg-white/10 px-2.5 py-1 rounded-xl border border-white/10 text-xs">
-                <span className="text-slate-400">Voice:</span>
-                <select
-                  value={voicePersona}
-                  onChange={(e) => handlePersonaChange(e.target.value as IndianVoicePersona)}
-                  className="bg-transparent text-amber-300 font-bold focus:outline-none cursor-pointer"
-                >
-                  <option value="ananya" className="bg-slate-900 text-white">Ananya (Clear)</option>
-                  <option value="arjun" className="bg-slate-900 text-white">Arjun (Deep)</option>
-                  <option value="pooja" className="bg-slate-900 text-white">Pooja (Melodious)</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* 6 Interactive Language Channel Buttons (User chooses language to be heard) */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-            {LANGUAGE_LIST.map((lang) => {
-              const isSelected = listeningLang === lang.code;
-              return (
-                <button
-                  key={lang.code}
-                  onClick={() => handleSelectListeningLang(lang.code)}
-                  className={`p-3 rounded-xl text-left transition-all relative border flex flex-col justify-between ${
-                    isSelected
-                      ? 'bg-indigo-600 text-white border-indigo-400 shadow-md shadow-indigo-600/30 ring-2 ring-indigo-400/50'
-                      : 'bg-white/5 hover:bg-white/10 text-slate-300 border-white/10 hover:border-white/20'
-                  }`}
-                >
-                  <div className="flex items-center justify-between w-full mb-1">
-                    <span className="text-sm font-black">{lang.name}</span>
-                    {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
-                  </div>
-                  <div className={`text-xs ${isSelected ? 'text-indigo-100 font-bold' : 'text-slate-400'}`}>
-                    {lang.nativeName}
-                  </div>
-                  <div className="mt-2 text-[10px] font-mono tracking-wider uppercase opacity-80">
-                    {isSelected ? '🎧 Tuning In' : 'Select Channel'}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Audio Playback Controller Bar */}
-          <div className="pt-2 flex flex-col md:flex-row items-center justify-between gap-4 bg-black/30 rounded-xl p-3 border border-white/5">
-            {/* Play / Pause / Skip Controls */}
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => conferenceSpeechManager.prevSegment()}
-                disabled={activeSegmentIndex <= 0 || allSegments.length === 0}
-                title="Previous Intervention"
-                className="p-2 text-slate-300 hover:text-white disabled:opacity-30 rounded-lg hover:bg-white/10 transition-colors"
-              >
-                <SkipBack className="w-4 h-4" />
-              </button>
-
-              <button
-                onClick={handleTogglePlay}
-                disabled={allSegments.length === 0}
-                className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-2"
-              >
-                {playbackState.isPlaying ? (
-                  <>
-                    <Pause className="w-4 h-4 fill-current" />
-                    <span>Pause Live Audio</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-4 h-4 fill-current" />
-                    <span>Hear Live in {SUPPORTED_LANGUAGES[listeningLang].name}</span>
-                  </>
-                )}
-              </button>
-
-              <button
-                onClick={() => conferenceSpeechManager.nextSegment()}
-                disabled={activeSegmentIndex >= allSegments.length - 1 || allSegments.length === 0}
-                title="Next Intervention"
-                className="p-2 text-slate-300 hover:text-white disabled:opacity-30 rounded-lg hover:bg-white/10 transition-colors"
-              >
-                <SkipForward className="w-4 h-4" />
-              </button>
-
-              <button
-                onClick={() => handlePlaySpecificSegment(0)}
-                disabled={allSegments.length === 0}
-                title="Replay from Beginning"
-                className="p-2 text-slate-300 hover:text-white disabled:opacity-30 rounded-lg hover:bg-white/10 transition-colors"
-              >
-                <RotateCcw className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Conference Stream Progress */}
-            <div className="flex-1 max-w-md w-full px-2">
-              <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-                <span>
-                  {allSegments.length === 0 ? (
-                    'Waiting for speaker mic broadcast...'
-                  ) : (
-                    <>
-                      Intervention <strong>{activeSegmentIndex + 1}</strong> of {allSegments.length}
-                    </>
-                  )}
-                </span>
-                <span className="text-slate-300 font-mono">
-                  {allSegments.length > 0
-                    ? `${Math.round(((activeSegmentIndex + 1) / Math.max(allSegments.length, 1)) * 100)}%`
-                    : 'Live Ready'}
-                </span>
-              </div>
-              <div className="w-full bg-white/10 rounded-full h-1.5 overflow-hidden">
-                <div
-                  className="bg-amber-400 h-1.5 transition-all duration-300"
-                  style={{
-                    width: allSegments.length > 0
-                      ? `${((activeSegmentIndex + 1) / Math.max(allSegments.length, 1)) * 100}%`
-                      : '0%',
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Cadence & Speed Selector */}
-            <div className="flex items-center space-x-2 text-xs">
-              <span className="text-slate-400 text-[11px]">Speech Pace:</span>
-              <div className="flex bg-white/10 p-0.5 rounded-lg">
-                <button
-                  onClick={() => handleSpeedChange('normal')}
-                  className={`px-2 py-1 rounded text-[11px] font-semibold transition-all ${
-                    playbackSpeed === 'normal' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-300'
-                  }`}
-                >
-                  1.0x Normal
-                </button>
-                <button
-                  onClick={() => handleSpeedChange('slow')}
-                  className={`px-2 py-1 rounded text-[11px] font-semibold transition-all ${
-                    playbackSpeed === 'slow' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-300'
-                  }`}
-                >
-                  0.8x Clear
-                </button>
-              </div>
-
-              {/* Auto-scroll toggle */}
-              <button
-                onClick={() => setAutoScroll((prev) => !prev)}
-                title="Toggle Teleprompter Auto-Scroll"
-                className={`px-2 py-1 rounded text-[11px] font-semibold transition-all ${
-                  autoScroll ? 'bg-indigo-500/30 text-indigo-300 border border-indigo-400/40' : 'text-slate-400'
-                }`}
-              >
-                Auto-Scroll
-              </button>
-            </div>
           </div>
         </div>
       </div>
